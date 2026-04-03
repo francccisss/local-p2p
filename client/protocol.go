@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strconv"
 )
 
 type PeerStatus int
@@ -27,8 +28,8 @@ type Peer struct {
 	NodeAddr NodeAddr
 }
 type NodeAddr struct {
-	IP   string
-	Port string
+	IP   net.IP
+	Port int
 }
 
 type Node struct {
@@ -75,7 +76,9 @@ type RPCMsg struct {
 
 func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
 	b, err := json.Marshal(message)
-	raddr, err := net.ResolveUDPAddr("udp", peerAddr.IP+":"+peerAddr.Port)
+	ip := string(peerAddr.IP)
+	port := strconv.Itoa(peerAddr.Port)
+	raddr, err := net.ResolveUDPAddr("udp", ip+":"+port)
 	if err != nil {
 		return err
 	}
