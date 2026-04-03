@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"sync"
 )
 
 type PeerStatus int
@@ -79,25 +80,27 @@ func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("\nMarshalled: %d", len(b))
+
 	ip := string(peerAddr.IP)
 	port := strconv.Itoa(peerAddr.Port)
 	raddr, err := net.ResolveUDPAddr("udp", ip+":"+port)
-	if err != nil {
-		return err
-	}
-	n, err := conn.WriteTo(b, raddr)
+
 	if err != nil {
 		return err
 	}
 
 	fmt.Printf("\nSend to: %s\n", ip+":"+port)
+	n, err := conn.WriteTo(b, raddr)
+	if err != nil {
+		return err
+	}
+
 	fmt.Printf("Marshalled: %d\nSent: %d\n", len(b), n)
 
 	return nil
 }
 
-func (n *Node) Ping() error {
+func (n *Node) Ping(wg *sync.WaitGroup) error {
 
 	var msg RPCMsg = RPCMsg{
 		RPCType:    CALL,
@@ -109,12 +112,12 @@ func (n *Node) Ping() error {
 
 	for i := 0; i < len(n.PeerTable); i++ {
 		var p Peer = n.PeerTable[i]
+		fmt.Printf("\nPEER: %+v\n", p)
 		SendMsg(n.UDPconn, msg, p.NodeAddr)
-		if i == len(n.PeerTable) {
-			break
-		}
 	}
 
+	fmt.Println("\nPinging peers in cluster.")
+	fmt.Println("Ping Sent")
 	return nil
 }
 

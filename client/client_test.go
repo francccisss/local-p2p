@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"net"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestClientConn(t *testing.T) {
@@ -20,6 +22,7 @@ func TestClientConn(t *testing.T) {
 	}
 	defer UDPConn.Close()
 	var clientNode Node = Node{
+		UDPconn: UDPConn,
 		Addr: NodeAddr{
 			IP:   []byte("localhost"),
 			Port: 3030,
@@ -46,9 +49,12 @@ func TestClientConn(t *testing.T) {
 		},
 	}
 
-	err = clientNode.Ping()
+	var wg sync.WaitGroup
+	err = clientNode.Ping(&wg)
 	if err != nil {
 		panic(err.Error())
 	}
+
+	time.Sleep(time.Second * 3)
 
 }
