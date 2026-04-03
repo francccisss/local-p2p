@@ -28,13 +28,13 @@ type Peer struct {
 	NodeAddr NodeAddr
 }
 type NodeAddr struct {
-	IP   net.IP
+	IP   []byte
 	Port int
 }
 
 type Node struct {
 	UDPconn   *net.UDPConn
-	PeerTable []Peer
+	PeerTable []Peer // TODO Change to map with array of Peer, key is the hash value of the file that is being transffered in the cluster
 	Id        string // 16bit len
 	Addr      NodeAddr
 }
@@ -76,25 +76,36 @@ type RPCMsg struct {
 
 func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
 	b, err := json.Marshal(message)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\nMarshalled: %d", len(b))
 	ip := string(peerAddr.IP)
 	port := strconv.Itoa(peerAddr.Port)
 	raddr, err := net.ResolveUDPAddr("udp", ip+":"+port)
 	if err != nil {
 		return err
 	}
-	n, err := conn.WriteToUDP(b, raddr)
+	n, err := conn.WriteTo(b, raddr)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("\nMarshalled: %d\nSent: %d\n", len(b), n)
+	fmt.Printf("\nSend to: %s\n", ip+":"+port)
+	fmt.Printf("Marshalled: %d\nSent: %d\n", len(b), n)
 
 	return nil
 }
 
 func (n *Node) Ping() error {
 
-	var msg RPCMsg = RPCMsg{RPCType: CALL, NodeAddr: n.Addr}
+	var msg RPCMsg = RPCMsg{
+		RPCType:    CALL,
+		NodeAddr:   n.Addr,
+		Method:     PING,
+		Payload:    []byte("Ping"),
+		StatusCode: SUCCESS,
+	}
 
 	for i := 0; i < len(n.PeerTable); i++ {
 		var p Peer = n.PeerTable[i]
@@ -115,16 +126,18 @@ func (n *Node) RecvRPCMessage(msg RPCMsg) {
 		fmt.Println("Call Message")
 		switch msg.Method {
 		case PING:
-
+			// respond to ping
 			newRPCMsg = RPCMsg{
 				Method:     PING,
 				RPCType:    CALL,
 				Comment:    "",
 				StatusCode: SUCCESS,
 				NodeAddr:   NodeAddr{IP: n.Addr.IP, Port: n.Addr.Port},
+				Payload:    []byte("Pong"),
 			}
-
 			SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
+		case LEECH:
+
 		}
 
 	case REPLY:

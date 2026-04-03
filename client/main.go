@@ -41,16 +41,15 @@ func main() {
 
 	var buffer = make([]byte, 4096)
 	for {
-		// does this block the thread
 		n, _, err := UDPConn.ReadFromUDP(buffer)
 		if err != nil {
 			fmt.Println(err.Error())
 			panic("Unable to handle incoming data")
 		}
+
 		if n < 1 {
 			fmt.Println("Empty")
 			break
-
 		}
 
 		rpcMsg, err := ReadRPCMessage(buffer[:n])
@@ -60,8 +59,10 @@ func main() {
 		}
 		fmt.Printf("Recevied Data: %+v\n", rpcMsg)
 		fmt.Printf("Bodyt Contents: %s\n", rpcMsg.Payload)
+		break
 
 	}
+	fmt.Println("Done")
 
 }
 

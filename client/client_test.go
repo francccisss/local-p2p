@@ -25,19 +25,28 @@ func TestClientConn(t *testing.T) {
 			Port: 3030,
 		},
 	}
-	msg := RPCMsg{
-		RPCType:    CALL,
-		StatusCode: SUCCESS,
-		Method:     PING,
-		NodeAddr:   clientNode.Addr,
-		Payload:    []byte("Ping"),
-	}
-	raddr := NodeAddr{
-		IP:   []byte("localhost"),
-		Port: 5656,
+	clientNode.PeerTable = []Peer{
+		{
+			LStatus: IDLE,
+			PStatus: SEEDING,
+
+			NodeAddr: NodeAddr{
+				IP:   []byte("localhost"),
+				Port: 5656,
+			},
+		},
+		{
+			LStatus: IDLE,
+			PStatus: SEEDING,
+
+			NodeAddr: NodeAddr{
+				IP:   []byte("localhost"),
+				Port: 4209,
+			},
+		},
 	}
 
-	err = SendMsg(UDPConn, msg, raddr)
+	err = clientNode.Ping()
 	if err != nil {
 		panic(err.Error())
 	}
