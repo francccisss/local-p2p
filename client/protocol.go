@@ -1,0 +1,144 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"net"
+)
+
+type PeerStatus int
+
+const (
+	LEECHING PeerStatus = iota
+	SEEDING
+	IDLE
+)
+
+type Method int
+
+const (
+	PING Method = iota
+	LEECH
+)
+
+type Peer struct {
+	PStatus  PeerStatus
+	LStatus  PeerStatus
+	NodeAddr NodeAddr
+}
+type NodeAddr struct {
+	IP   string
+	Port string
+}
+
+type Node struct {
+	UDPconn   *net.UDPConn
+	PeerTable []Peer
+	Id        string // 16bit len
+	Addr      NodeAddr
+}
+
+type ClientConn interface {
+	Ping() error
+	SetStatus() error // setting internal status
+	Leech() error
+}
+
+type MsgType int
+
+const (
+	CALL MsgType = iota
+	REPLY
+)
+
+type StatusCode int
+
+const (
+	SUCCESS StatusCode = iota
+	ERROR
+)
+
+type BodyMsg struct {
+}
+
+// MsgType could be either reply or call
+type RPCMsg struct {
+	SegmentPosition int
+	SegmentCount    int
+	RPCType         MsgType
+	NodeAddr        NodeAddr
+	Method          Method
+	Payload         []byte
+	StatusCode      StatusCode
+	Comment         string
+}
+
+func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
+	b, err := json.Marshal(message)
+	raddr, err := net.ResolveUDPAddr("udp", peerAddr.IP+":"+peerAddr.Port)
+	if err != nil {
+		return err
+	}
+	n, err := conn.WriteToUDP(b, raddr)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("\nMarshalled: %d\nSent: %d\n", len(b), n)
+
+	return nil
+}
+
+func (n *Node) Ping() error {
+
+	var msg RPCMsg = RPCMsg{RPCType: CALL, NodeAddr: n.Addr}
+
+	for i := 0; i < len(n.PeerTable); i++ {
+		var p Peer = n.PeerTable[i]
+		SendMsg(n.UDPconn, msg, p.NodeAddr)
+		if i == len(n.PeerTable) {
+			break
+		}
+	}
+
+	return nil
+}
+
+func (n *Node) RecvRPCMessage(msg RPCMsg) {
+
+	var newRPCMsg RPCMsg
+	switch msg.RPCType {
+	case CALL:
+		fmt.Println("Call Message")
+		switch msg.Method {
+		case PING:
+
+			newRPCMsg = RPCMsg{
+				Method:     PING,
+				RPCType:    CALL,
+				Comment:    "",
+				StatusCode: SUCCESS,
+				NodeAddr:   NodeAddr{IP: n.Addr.IP, Port: n.Addr.Port},
+			}
+
+			SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
+		}
+
+	case REPLY:
+		fmt.Println("Reply from Call Message")
+	default:
+
+	}
+
+}
+
+// buffer is the payload received from a peer
+func ReadRPCMessage(buffer []byte) (RPCMsg, error) {
+
+	var msg RPCMsg
+	err := json.Unmarshal(buffer, &msg)
+	if err != nil {
+		return RPCMsg{}, err
+	}
+	return msg, nil
+}

@@ -4,22 +4,27 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 )
 
 func main() {
 
 	fmt.Println("Client")
 	// args[1] port number, args[2] command, args[3] parameter for command
+	args := os.Args[1:]
 	print_args()
 	ip := []byte("")
-	addr := &net.UDPAddr{IP: ip, Port: 5656}
+	if len(args) < 1 {
+		panic("No port arguments, add a port number")
+	}
+	port, err := strconv.Atoi(args[0])
 
-	// addr, err := net.ResolveUDPAddr("udp", "localhost:5656")
-	//
-	// if err != nil {
-	// 	fmt.Println(err.Error())
-	// 	panic("Shutting down")
-	// }
+	if err != nil {
+		fmt.Println(err.Error())
+		panic("Shutting down")
+	}
+
+	addr := &net.UDPAddr{IP: ip, Port: port}
 
 	UDPConn, err := net.ListenUDP("udp", addr)
 	if err != nil {
@@ -27,15 +32,27 @@ func main() {
 		panic("Shutting down")
 	}
 
-	var buffer []byte
+	var buffer = make([]byte, 4096)
 	for {
 		// does this block the thread
-		len, _, err := UDPConn.ReadFromUDP(buffer)
+		n, _, err := UDPConn.ReadFromUDP(buffer)
 		if err != nil {
 			fmt.Println(err.Error())
 			panic("Unable to handle incoming data")
 		}
-		fmt.Printf("Bytes read %d\n", len)
+		if n < 1 {
+			fmt.Println("Empty")
+			break
+
+		}
+
+		rpcMsg, err := ReadRPCMessage(buffer[:n])
+		if err != nil {
+			fmt.Println(err.Error())
+			panic("Unable to handle incoming data")
+		}
+		fmt.Printf("Recevied Data: %+v\n", rpcMsg)
+		fmt.Printf("Bodyt Contents: %s\n", rpcMsg.Payload)
 
 	}
 
