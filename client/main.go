@@ -7,6 +7,8 @@ import (
 	"strconv"
 )
 
+const FILE_LOCATION = "/files/"
+
 func main() {
 
 	fmt.Println("Client")

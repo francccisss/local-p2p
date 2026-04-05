@@ -107,3 +107,5 @@ func ReadRPCMessage(buffer []byte) error {
 
 	return nil
 }
+
+func (n *Node) CheckFile

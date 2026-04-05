@@ -8,14 +8,6 @@ import (
 	"sync"
 )
 
-type PeerStatus int
-
-const (
-	LEECHING PeerStatus = iota
-	SEEDING
-	IDLE
-)
-
 type Method int
 
 const (
@@ -23,27 +15,15 @@ const (
 	LEECH
 )
 
-type Peer struct {
-	PStatus  PeerStatus
-	LStatus  PeerStatus
-	NodeAddr NodeAddr
-}
-type NodeAddr struct {
-	IP   []byte
-	Port int
-}
-
-type Node struct {
-	UDPconn   *net.UDPConn
-	PeerTable []Peer // TODO Change to map with array of Peer, key is the hash value of the file that is being transffered in the cluster
-	Id        string // 16bit len
-	Addr      NodeAddr
-}
+// Node can implement client connection interface
+// this interface describes the characteristics of
+// a Node in a cluster that makes it able to communicate with its peers
 
 type ClientConn interface {
 	Ping() error
-	SetStatus() error // setting internal status
 	Leech() error
+	CheckFile() (StatusCode, error) // checks for file existence also should do checksum for data integrity before transfering for security reasons
+	RecvRPCMessage(msg RPCMsg) error
 }
 
 type MsgType int
@@ -100,28 +80,7 @@ func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
 	return nil
 }
 
-func (n *Node) Ping(wg *sync.WaitGroup) error {
-
-	var msg RPCMsg = RPCMsg{
-		RPCType:    CALL,
-		NodeAddr:   n.Addr,
-		Method:     PING,
-		Payload:    []byte("Ping"),
-		StatusCode: SUCCESS,
-	}
-
-	for i := 0; i < len(n.PeerTable); i++ {
-		var p Peer = n.PeerTable[i]
-		fmt.Printf("\nPEER: %+v\n", p)
-		SendMsg(n.UDPconn, msg, p.NodeAddr)
-	}
-
-	fmt.Println("\nPinging peers in cluster.")
-	fmt.Println("Ping Sent")
-	return nil
-}
-
-func (n *Node) RecvRPCMessage(msg RPCMsg) {
+func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 	var newRPCMsg RPCMsg
 	switch msg.RPCType {
@@ -149,6 +108,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsg) {
 
 	}
 
+	return fmt.Errorf("Unable to receive rpc requests.")
 }
 
 // buffer is the payload received from a peer
@@ -160,4 +120,30 @@ func ReadRPCMessage(buffer []byte) (RPCMsg, error) {
 		return RPCMsg{}, err
 	}
 	return msg, nil
+}
+
+func ProbeFile(n *Node, fileKey string) (StatusCode, error) {
+
+	return SUCCESS, nil
+}
+
+func Ping(n *Node, wg *sync.WaitGroup) error {
+
+	var msg RPCMsg = RPCMsg{
+		RPCType:    CALL,
+		NodeAddr:   n.Addr,
+		Method:     PING,
+		Payload:    []byte("Ping"),
+		StatusCode: SUCCESS,
+	}
+
+	for i := 0; i < len(n.PeerTable); i++ {
+		var p Peer = n.PeerTable[i]
+		fmt.Printf("\nPEER: %+v\n", p)
+		SendMsg(n.UDPconn, msg, p.NodeAddr)
+	}
+
+	fmt.Println("\nPinging peers in cluster.")
+	fmt.Println("Ping Sent")
+	return nil
 }
