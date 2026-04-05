@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"net"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -62,19 +61,7 @@ func TestClientConn(t *testing.T) {
 func TestFiles(t *testing.T) {
 
 	var clientNode Node
-	entries, err := os.ReadDir("./files")
-
-	programWD, err := os.Getwd()
-	if err != nil {
-		fmt.Printf("Error Unable to Read Get Current Working Directory\n")
-		fmt.Printf("Reason: %s\n", err)
-		t.FailNow()
-	}
-	wd := []string{programWD}
-	wd = append(wd, FILE_LOCATION)
-	entry, err := clientNode.Checkfile("pdd2zwopm2sg1.webp", entries, &wd)
-	entryNumber := len(entries)
-	fmt.Printf("Entry numbers: %d\n", entryNumber)
+	entry, err := clientNode.Checkfile("pdd2zwopm2sg1.webp")
 	if err != nil {
 		fmt.Println(err.Error())
 		t.FailNow()

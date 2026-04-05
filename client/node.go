@@ -45,8 +45,28 @@ func ConcatStr(str *[]string) string {
 
 }
 
-func (n *Node) Checkfile(fileKey string, entries []os.DirEntry, programWD *[]string) (os.DirEntry, error) {
+func (n *Node) Checkfile(fileKey string) (os.DirEntry, error) {
 
+	programwd, err := os.Getwd()
+	if err != nil {
+		fmt.Printf("Error Unable to Read Get Current Working Directory\n")
+		fmt.Printf("Reason: %s\n", err)
+		return nil, err
+	}
+	wd := []string{programwd}
+	wd = append(wd, FILE_LOCATION)
+
+	entries, err := os.ReadDir(ConcatStr(&wd))
+
+	entry, err := recursiveFileSearch(fileKey, entries, &wd)
+	if err != nil {
+		return nil, fmt.Errorf("No entries matching the fileKey.")
+	}
+
+	return entry, nil
+}
+
+func recursiveFileSearch(fileKey string, entries []os.DirEntry, wd *[]string) (os.DirEntry, error) {
 	for _, entry := range entries {
 		info, err := entry.Info()
 		fileName := info.Name()
@@ -58,18 +78,18 @@ func (n *Node) Checkfile(fileKey string, entries []os.DirEntry, programWD *[]str
 		}
 		if info.IsDir() {
 			currentDirectory := fileName + "/"
-			*programWD = append(*programWD, currentDirectory)
-			curDirEntries, err := os.ReadDir(ConcatStr(programWD))
+			*wd = append(*wd, currentDirectory)
+			curDirEntries, err := os.ReadDir(ConcatStr(&*wd))
 			if err != nil {
-				*programWD = (*programWD)[:len(*programWD)-1]
+				*wd = (*wd)[:len(*wd)-1]
 				fmt.Printf("Error Unable to Read from Directory: %s\n", fileName)
 				fmt.Printf("Reason: %s\n", err)
 				continue
 			}
 
-			foundEntry, err := n.Checkfile(fileKey, curDirEntries, programWD)
+			foundEntry, err := recursiveFileSearch(fileKey, curDirEntries, wd)
 			if err != nil {
-				*programWD = (*programWD)[:len(*programWD)-1]
+				*wd = (*wd)[:len(*wd)-1]
 				continue
 			}
 			return foundEntry, nil
