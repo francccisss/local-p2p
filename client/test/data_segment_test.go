@@ -1,9 +1,11 @@
 package test
 
 import (
-	_ "client/protocol"
+	clientProtocol "client/protocol"
 	"client/utils"
 	"fmt"
+	"io/fs"
+	"os"
 	_ "os"
 	"slices"
 	"testing"
@@ -11,22 +13,21 @@ import (
 
 func TestDataSegmentation(t *testing.T) {
 
-	// n := clientProtocol.Node{
-	// 	FILE_LOCATION: "/files/",
-	// }
-	//
-	// en, path, err := n.Checkfile("pdd2zwopm2sg1.webp", n.FILE_LOCATION)
-	// if err != nil {
-	// 	fmt.Println(err)
-	// 	t.FailNow()
-	// }
-	// b, err := os.ReadFile(path + en.Name())
-	// if err != nil {
-	// 	fmt.Println(err)
-	// 	t.FailNow()
-	// }
+	n := clientProtocol.Node{
+		FILE_LOCATION: "/files/",
+	}
 
-	b := []byte("This is a string where each character is a single byte... i think")
+	en, path, err := n.Checkfile("pdd2zwopm2sg1.webp", n.FILE_LOCATION)
+	if err != nil {
+		fmt.Println(err)
+		t.FailNow()
+	}
+	b, err := os.ReadFile(path + en.Name())
+	if err != nil {
+		fmt.Println(err)
+		t.FailNow()
+	}
+
 	ds, err := utils.DataSegmentation(b, 10)
 	if err != nil {
 		fmt.Println(err)
@@ -38,8 +39,18 @@ func TestDataSegmentation(t *testing.T) {
 		fmt.Printf("Segment #%d\nData: %+v\n", d.SegmentNum, d)
 		tmp = append(tmp, d.DataChunk)
 	}
+	conctData := slices.Concat(tmp...)
+	fmt.Printf("Data len from segment: %d\n", len(conctData))
+	fmt.Printf("From byte to string: %s\n", conctData)
 
-	fmt.Printf("Data len from segment: %d\n", len(slices.Concat(tmp...)))
-	fmt.Printf("From byte to string: %s\n", slices.Concat(tmp...))
+	var fm fs.FileMode
 
+	fm |= fs.ModePerm
+
+	err = os.WriteFile("newfile.webp", conctData, fm)
+
+	if err != nil {
+		fmt.Println(err)
+		t.FailNow()
+	}
 }
