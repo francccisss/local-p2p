@@ -1,4 +1,4 @@
-package main
+package protocol
 
 import (
 	"client/utils"
@@ -26,10 +26,11 @@ type NodeAddr struct {
 }
 
 type Node struct {
-	UDPconn   *net.UDPConn
-	PeerTable []Peer // TODO Change to map with array of Peer, key is the hash value of the file that is being transffered in the cluster
-	Id        string // 16bit len
-	Addr      NodeAddr
+	UDPconn       *net.UDPConn
+	PeerTable     []Peer // TODO Change to map with array of Peer, key is the hash value of the file that is being transffered in the cluster
+	Id            string // 16bit len
+	Addr          NodeAddr
+	FILE_LOCATION string
 }
 
 // key for peer table to set status for current cluster
@@ -39,7 +40,7 @@ func (n *Node) SetStatus(key string) {
 
 // Node's internal function not including reponding to rpc requests from other peers
 
-func (n *Node) Checkfile(fileKey string) (os.DirEntry, string, error) {
+func (n *Node) Checkfile(fileKey string, FILE_LOCATION string) (os.DirEntry, string, error) {
 
 	programwd, err := os.Getwd()
 	if err != nil {
@@ -70,7 +71,7 @@ func recursiveFileSearch(fileKey string, entries []os.DirEntry, wd *[]string) (o
 	for _, entry := range entries {
 		info, err := entry.Info()
 		entryName := info.Name()
-		fmt.Printf("entry: %s\n", entryName)
+		// fmt.Printf("entry: %s\n", entryName)
 		if err != nil {
 			fmt.Printf("Error Unable to get info for file: %s\n", entryName)
 			fmt.Printf("Reason: %s\n", err)

@@ -1,4 +1,4 @@
-package main
+package protocol
 
 import (
 	"encoding/json"
@@ -57,6 +57,8 @@ type RPCMsg struct {
 	Comment         string
 }
 
+// when sending a message from a CALL rpc type, if the response takes too long, we drop and forget it.
+// and consider that peer as offline
 func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
 	b, err := json.Marshal(message)
 	if err != nil {
@@ -88,21 +90,25 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 	switch msg.RPCType {
 	case CALL:
 		fmt.Println("Call Message")
+		newRPCMsg = RPCMsg{
+			RPCType:  CALL,
+			Comment:  "",
+			NodeAddr: NodeAddr{IP: n.Addr.IP, Port: n.Addr.Port},
+		}
 		switch msg.Method {
 		case PING:
-			// respond to ping
-			newRPCMsg = RPCMsg{
-				Method:     PING,
-				RPCType:    CALL,
-				Comment:    "",
-				StatusCode: SUCCESS,
-				NodeAddr:   NodeAddr{IP: n.Addr.IP, Port: n.Addr.Port},
-				Payload:    []byte("Pong"),
+			newRPCMsg.Method = PING
+			newRPCMsg.Payload = []byte("Pong")
+			newRPCMsg.StatusCode = SUCCESS
+			err := SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
+			if err != nil {
+				fmt.Println("Unable to respond to ping")
+				return err
 			}
-			SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
 		case LEECH:
 
 		case PROBE:
+
 			fileKey := string(msg.Payload)
 			_, err := ProbeFile(n, fileKey)
 			if err != nil {
@@ -135,7 +141,7 @@ func ReadRPCMessage(buffer []byte) (RPCMsg, error) {
 // TODO add checksum parameter passed in by caller
 func ProbeFile(n *Node, fileKey string) (StatusCode, error) {
 
-	entry, path, err := n.Checkfile(fileKey)
+	entry, path, err := n.Checkfile(fileKey, n.FILE_LOCATION)
 	if err != nil {
 		return ERROR, err
 	}

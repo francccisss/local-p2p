@@ -1,6 +1,7 @@
 package main
 
 import (
+	"client/protocol"
 	"fmt"
 	"net"
 	"os"
@@ -21,11 +22,12 @@ func main() {
 	}
 	port, err := strconv.Atoi(args[0])
 
-	var clientNode Node = Node{
-		Addr: NodeAddr{
+	var clientNode protocol.Node = protocol.Node{
+		Addr: protocol.NodeAddr{
 			IP:   ip,
 			Port: port,
 		},
+		FILE_LOCATION: FILE_LOCATION,
 	}
 
 	if err != nil {
@@ -55,14 +57,14 @@ func main() {
 			break
 		}
 
-		rpcMsg, err := ReadRPCMessage(buffer[:n])
+		rpcMsg, err := protocol.ReadRPCMessage(buffer[:n])
 		if err != nil {
 			fmt.Println(err.Error())
 			panic("Unable to handle incoming data")
 		}
 		fmt.Printf("Recevied Data: %+v\n", rpcMsg)
-		fmt.Printf("Bodyt Contents: %s\n", rpcMsg.Payload)
-		err = RecvRPCMessage(&clientNode, rpcMsg)
+		fmt.Printf("Body Contents: %s\n", rpcMsg.Payload)
+		err = protocol.RecvRPCMessage(&clientNode, rpcMsg)
 
 		if err != nil {
 			fmt.Println(err.Error())
