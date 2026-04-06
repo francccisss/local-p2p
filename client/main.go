@@ -36,6 +36,7 @@ func main() {
 	addr := &net.UDPAddr{IP: clientNode.Addr.IP, Port: clientNode.Addr.Port}
 
 	UDPConn, err := net.ListenUDP("udp", addr)
+	clientNode.UDPconn = UDPConn
 	if err != nil {
 		fmt.Println(err.Error())
 		panic("Shutting down")
@@ -61,7 +62,12 @@ func main() {
 		}
 		fmt.Printf("Recevied Data: %+v\n", rpcMsg)
 		fmt.Printf("Bodyt Contents: %s\n", rpcMsg.Payload)
-		break
+		err = RecvRPCMessage(&clientNode, rpcMsg)
+
+		if err != nil {
+			fmt.Println(err.Error())
+			panic("Unable to handle incoming data")
+		}
 
 	}
 	fmt.Println("Done")

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"client/utils"
 	"fmt"
 	"net"
 	"os"
@@ -35,70 +36,67 @@ type Node struct {
 func (n *Node) SetStatus(key string) {
 
 }
-func ConcatStr(str *[]string) string {
 
-	tmp := ""
-	for _, s := range *str {
-		tmp += s
-	}
-	return tmp
+// Node's internal function not including reponding to rpc requests from other peers
 
-}
-
-func (n *Node) Checkfile(fileKey string) (os.DirEntry, error) {
+func (n *Node) Checkfile(fileKey string) (os.DirEntry, string, error) {
 
 	programwd, err := os.Getwd()
 	if err != nil {
 		fmt.Printf("Error Unable to Read Get Current Working Directory\n")
 		fmt.Printf("Reason: %s\n", err)
-		return nil, err
+		return nil, "", err
 	}
 	wd := []string{programwd}
 	wd = append(wd, FILE_LOCATION)
 
-	entries, err := os.ReadDir(ConcatStr(&wd))
+	entries, err := os.ReadDir(utils.ConcatStr(&wd))
 
 	entry, err := recursiveFileSearch(fileKey, entries, &wd)
+
 	if err != nil {
-		return nil, fmt.Errorf("No entries matching the fileKey.")
+		return nil, "", fmt.Errorf("No entries matching the fileKey.")
 	}
 
-	return entry, nil
+	return entry, utils.ConcatStr(&wd), nil
 }
 
+// initializes `wd` with the current working directory of the program
+// appended with the file location of the user and as `entries` array is iterated
+// and if the current entry is a Directory the `wd` is appended with the current name
+// of the directory, and if not then continue.
+// If the current file is not a directory and matches the `fileKey` the return the entry of that file
 func recursiveFileSearch(fileKey string, entries []os.DirEntry, wd *[]string) (os.DirEntry, error) {
 	for _, entry := range entries {
 		info, err := entry.Info()
-		fileName := info.Name()
-		fmt.Printf("entry: %s\n", fileName)
+		entryName := info.Name()
+		fmt.Printf("entry: %s\n", entryName)
 		if err != nil {
-			fmt.Printf("Error Unable to get info for file: %s\n", fileName)
+			fmt.Printf("Error Unable to get info for file: %s\n", entryName)
 			fmt.Printf("Reason: %s\n", err)
 			continue
 		}
-		if info.IsDir() {
-			currentDirectory := fileName + "/"
-			*wd = append(*wd, currentDirectory)
-			curDirEntries, err := os.ReadDir(ConcatStr(&*wd))
-			if err != nil {
-				*wd = (*wd)[:len(*wd)-1]
-				fmt.Printf("Error Unable to Read from Directory: %s\n", fileName)
-				fmt.Printf("Reason: %s\n", err)
-				continue
+		if !info.IsDir() {
+			if entryName == fileKey {
+				return entry, nil
 			}
-
-			foundEntry, err := recursiveFileSearch(fileKey, curDirEntries, wd)
-			if err != nil {
-				*wd = (*wd)[:len(*wd)-1]
-				continue
-			}
-			return foundEntry, nil
+			continue
 		}
-		if fileName == fileKey {
-			return entry, nil
+		currentDirectory := entryName + "/"
+		*wd = append(*wd, currentDirectory)
+		curDirEntries, err := os.ReadDir(utils.ConcatStr(wd))
+		if err != nil {
+			*wd = (*wd)[:len(*wd)-1]
+			fmt.Printf("Error Unable to Read from Directory: %s\n", entryName)
+			fmt.Printf("Reason: %s\n", err)
+			continue
 		}
+		foundEntry, err := recursiveFileSearch(fileKey, curDirEntries, wd)
+		if err != nil {
+			*wd = (*wd)[:len(*wd)-1]
+			continue
+		}
+		return foundEntry, nil
 	}
 	return nil, fmt.Errorf("No entries matching the fileKey.")
 }
-
-// Node's internal function not including reponding to rpc requests from other peers

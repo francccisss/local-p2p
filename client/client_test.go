@@ -60,13 +60,53 @@ func TestClientConn(t *testing.T) {
 
 func TestFiles(t *testing.T) {
 
-	var clientNode Node
-	entry, err := clientNode.Checkfile("pdd2zwopm2sg1.webp")
-	if err != nil {
-		fmt.Println(err.Error())
-		t.FailNow()
-	}
+	fmt.Printf("Client send udp")
+	laddr, err := net.ResolveUDPAddr("udp", "localhost:3030")
 
-	fmt.Printf("Recieved Entry: %s\n", entry.Name())
+	if err != nil {
+		panic(err.Error())
+	}
+	UDPConn, err := net.ListenUDP("udp", laddr)
+	if err != nil {
+		panic(err.Error())
+	}
+	defer UDPConn.Close()
+	var clientNode Node = Node{
+		UDPconn: UDPConn,
+		Addr: NodeAddr{
+			IP:   []byte("localhost"),
+			Port: 3030,
+		},
+	}
+	clientNode.PeerTable = []Peer{
+		{
+			LStatus: IDLE,
+			PStatus: SEEDING,
+
+			NodeAddr: NodeAddr{
+				IP:   []byte("localhost"),
+				Port: 5656,
+			},
+		},
+		{
+			LStatus: IDLE,
+			PStatus: SEEDING,
+
+			NodeAddr: NodeAddr{
+				IP:   []byte("localhost"),
+				Port: 4209,
+			},
+		},
+	}
+	msg := RPCMsg{
+		NodeAddr: clientNode.Addr,
+		Payload:  []byte("pdd2zwopm2sg1.webp"),
+		Method:   PROBE,
+		RPCType:  CALL,
+	}
+	err = SendMsg(clientNode.UDPconn, msg, clientNode.PeerTable[0].NodeAddr)
+	if err != nil {
+		t.Fatalf("Failed from: %s", err.Error())
+	}
 
 }

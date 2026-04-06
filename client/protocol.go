@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"sync"
 )
@@ -13,6 +14,7 @@ type Method int
 const (
 	PING Method = iota
 	LEECH
+	PROBE
 )
 
 // Node can implement client connection interface
@@ -22,7 +24,7 @@ const (
 type ClientConn interface {
 	Ping() error
 	Leech() error
-	CheckFile() (StatusCode, error) // checks for file existence also should do checksum for data integrity before transfering for security reasons
+	ProbeFile(fileKey string) (StatusCode, error) // checks for file existence also should do checksum for data integrity before transfering for security reasons
 	RecvRPCMessage(msg RPCMsg) error
 }
 
@@ -100,6 +102,14 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
 		case LEECH:
 
+		case PROBE:
+			fileKey := string(msg.Payload)
+			_, err := ProbeFile(n, fileKey)
+			if err != nil {
+				fmt.Println("Error unable to probe for file")
+				return err
+			}
+			fmt.Println("Success")
 		}
 
 	case REPLY:
@@ -108,7 +118,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 	}
 
-	return fmt.Errorf("Unable to receive rpc requests.")
+	return nil
 }
 
 // buffer is the payload received from a peer
@@ -122,7 +132,30 @@ func ReadRPCMessage(buffer []byte) (RPCMsg, error) {
 	return msg, nil
 }
 
+// TODO add checksum parameter passed in by caller
 func ProbeFile(n *Node, fileKey string) (StatusCode, error) {
+
+	entry, path, err := n.Checkfile(fileKey)
+	if err != nil {
+		return ERROR, err
+	}
+
+	file, err := entry.Info()
+	if err != nil {
+		return ERROR, err
+	}
+	// obviously need to use the absolute route to the file
+	// reuse wd prefix? hmmm
+	fmt.Printf("Absolute Path: %s\n", path)
+	fileBuffer, err := os.ReadFile(path + file.Name())
+
+	if err != nil {
+		return ERROR, err
+	}
+
+	fmt.Printf("file length: %d\n", len(fileBuffer))
+
+	// check data integrity of file using checksum
 
 	return SUCCESS, nil
 }
