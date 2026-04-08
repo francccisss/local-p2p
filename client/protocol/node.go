@@ -15,10 +15,14 @@ const (
 	IDLE
 )
 
+type NodeID string
+
+// Peer is a node in a cluster
 type Peer struct {
 	PStatus  PeerStatus
 	LStatus  PeerStatus
 	NodeAddr NodeAddr
+	NodeID   NodeID
 }
 type NodeAddr struct {
 	IP   []byte
@@ -28,7 +32,7 @@ type NodeAddr struct {
 type Node struct {
 	UDPconn       *net.UDPConn
 	PeerTable     []Peer // TODO Change to map with array of Peer, key is the hash value of the file that is being transffered in the cluster
-	Id            string // 16bit len
+	NodeID        NodeID // 16bit len
 	Addr          NodeAddr
 	FILE_LOCATION string
 }
@@ -71,7 +75,7 @@ func recursiveFileSearch(fileKey string, entries []os.DirEntry, wd *[]string) (o
 	for _, entry := range entries {
 		info, err := entry.Info()
 		entryName := info.Name()
-		// fmt.Printf("entry: %s\n", entryName)
+		fmt.Printf("entry: %s\n", entryName)
 		if err != nil {
 			fmt.Printf("Error Unable to get info for file: %s\n", entryName)
 			fmt.Printf("Reason: %s\n", err)

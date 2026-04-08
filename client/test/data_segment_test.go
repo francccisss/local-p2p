@@ -16,8 +16,7 @@ func TestDataSegmentation(t *testing.T) {
 	n := clientProtocol.Node{
 		FILE_LOCATION: "/files/",
 	}
-
-	en, path, err := n.Checkfile("pdd2zwopm2sg1.webp", n.FILE_LOCATION)
+	en, path, err := n.Checkfile("sendingfile.webp", n.FILE_LOCATION)
 	if err != nil {
 		fmt.Println(err)
 		t.FailNow()
@@ -41,7 +40,6 @@ func TestDataSegmentation(t *testing.T) {
 	}
 	conctData := slices.Concat(tmp...)
 	fmt.Printf("Data len from segment: %d\n", len(conctData))
-	fmt.Printf("From byte to string: %s\n", conctData)
 
 	var fm fs.FileMode
 

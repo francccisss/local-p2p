@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 )
 
 type Method int
@@ -15,6 +16,7 @@ const (
 	PING Method = iota
 	LEECH
 	PROBE
+	MEASURE
 )
 
 // Node can implement client connection interface
@@ -51,10 +53,17 @@ type RPCMsg struct {
 	SegmentCount    int
 	RPCType         MsgType
 	NodeAddr        NodeAddr
+	NodeID          NodeID
 	Method          Method
 	Payload         []byte
 	StatusCode      StatusCode
 	Comment         string
+}
+
+type ThreadTimer struct {
+	timeSince   int64
+	NodeIDChann chan NodeID
+	averageTime int64
 }
 
 // when sending a message from a CALL rpc type, if the response takes too long, we drop and forget it.
@@ -84,15 +93,24 @@ func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
 	return nil
 }
 
-func RecvRPCMessage(n *Node, msg RPCMsg) error {
+// used for measuring start-time of the leech request, operating on different threads
+// string key is the key of the peer in the cluster, which maps to the time of when
+// the request has started for leeching
+// Race conditions:
+// this will be a read-only table, and will only be written
+// on a new LEECH request.
+
+func RecvRPCMessage(n *Node, msg RPCMsg, timeTable map[NodeID]ThreadTimer) error {
 
 	var newRPCMsg RPCMsg
 	switch msg.RPCType {
-	case CALL:
+	case CALL: // when peers/nodes send a call RPCType
 		fmt.Println("Call Message")
+		// PRELOADING RPC MESSAGE
 		newRPCMsg = RPCMsg{
-			RPCType:  CALL,
+			RPCType:  REPLY,
 			Comment:  "",
+			NodeID:   n.NodeID,
 			NodeAddr: NodeAddr{IP: n.Addr.IP, Port: n.Addr.Port},
 		}
 		switch msg.Method {
@@ -118,8 +136,26 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			fmt.Println("Success")
 		}
 
-	case REPLY:
+	case REPLY: // when peers/nodes send a call RPCType
+		switch msg.Method {
+		case LEECH:
+			if msg.StatusCode == ERROR {
+				return fmt.Errorf(msg.Comment)
+			}
+
+			t, ok := timeTable[msg.NodeID]
+			if !ok {
+				return fmt.Errorf("NodeID Key does not exist for thread")
+			}
+
+			if t.timeSince == 0 {
+				return fmt.Errorf("NodeID Key does not exist for thread")
+			}
+			MeasurePeerTransfer(n, &t)
+		}
+
 		fmt.Println("Reply from Call Message")
+
 	default:
 
 	}
@@ -185,4 +221,14 @@ func Ping(n *Node, wg *sync.WaitGroup) error {
 	fmt.Println("\nPinging peers in cluster.")
 	fmt.Println("Ping Sent")
 	return nil
+}
+
+type AverageTime int
+
+// will be received every reply to LEECH is received
+func MeasurePeerTransfer(n *Node, threadTimer *ThreadTimer) {
+	retrievedID := <-(*threadTimer).NodeIDChann
+	elapsedms := (time.Microsecond.Microseconds() - threadTimer.timeSince)
+
+	fmt.Printf("Measured transfer: %dms", elapsedms)
 }

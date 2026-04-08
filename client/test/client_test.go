@@ -93,7 +93,7 @@ func TestFiles(t *testing.T) {
 	}
 	msg := protoClient.RPCMsg{
 		NodeAddr: clientNode.Addr,
-		Payload:  []byte("pdd2zwopm2sg1.webp"),
+		Payload:  []byte("sendingfile.webp"),
 		Method:   protoClient.PROBE,
 		RPCType:  protoClient.CALL,
 	}
