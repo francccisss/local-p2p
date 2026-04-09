@@ -1,4 +1,4 @@
-package utils
+package protocol
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 // Payload of RPCMessage for LEECH call method
 type DataSegment struct {
 	SegmentNum  int
-	ClusterName string // string ID of the file to be sent
+	ClusterName ClusterName // string ID of the file to be sent
 	DataChunk   []byte
 }
 

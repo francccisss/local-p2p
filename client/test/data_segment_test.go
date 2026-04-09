@@ -2,7 +2,6 @@ package test
 
 import (
 	clientProtocol "client/protocol"
-	"client/utils"
 	"fmt"
 	"io/fs"
 	"os"
@@ -27,7 +26,7 @@ func TestDataSegmentation(t *testing.T) {
 		t.FailNow()
 	}
 
-	ds, err := utils.DataSegmentation(b, 10)
+	ds, err := clientProtocol.DataSegmentation(b, 10)
 	if err != nil {
 		fmt.Println(err)
 		t.FailNow()
@@ -51,4 +50,8 @@ func TestDataSegmentation(t *testing.T) {
 		fmt.Println(err)
 		t.FailNow()
 	}
+}
+
+func TestMeasureArrivingBytes(t *testing.T) {
+
 }

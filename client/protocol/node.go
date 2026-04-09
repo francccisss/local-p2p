@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"time"
 )
 
 type PeerStatus int
@@ -28,7 +29,7 @@ type Peer struct {
 type ClusterName string
 
 type PeerThread struct {
-	timeSince     int64
+	timeSince     time.Time
 	NodeIDChann   chan NodeID
 	ClusterName   ClusterName
 	averageBytes  int
@@ -52,7 +53,6 @@ type Node struct {
 
 func NewNode(conn *net.UDPConn, addr NodeAddr, nodeID NodeID, fileLoc string) *Node {
 	cl := make(ClusterTable)
-	i, ok := cl[""]
 	return &Node{
 		UDPconn:       conn,
 		Addr:          addr,

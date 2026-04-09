@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"client/utils"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -59,6 +58,66 @@ type RPCMsg struct {
 	Payload         []byte
 	StatusCode      StatusCode
 	Comment         string
+}
+
+// buffer is the payload received from a peer
+func ReadRPCMessage(buffer []byte) (RPCMsg, error) {
+
+	var msg RPCMsg
+	err := json.Unmarshal(buffer, &msg)
+	if err != nil {
+		return RPCMsg{}, err
+	}
+	return msg, nil
+}
+
+// TODO add checksum parameter passed in by caller
+func ProbeFile(n *Node, fileKey string) (StatusCode, error) {
+
+	entry, path, err := n.Checkfile(fileKey, n.FILE_LOCATION)
+	if err != nil {
+		return ERROR, err
+	}
+
+	file, err := entry.Info()
+	if err != nil {
+		return ERROR, err
+	}
+	// obviously need to use the absolute route to the file
+	// reuse wd prefix? hmmm
+	fmt.Printf("Absolute Path: %s\n", path)
+	fileBuffer, err := os.ReadFile(path + file.Name())
+
+	if err != nil {
+		return ERROR, err
+	}
+
+	fmt.Printf("file length: %d\n", len(fileBuffer))
+
+	// check data integrity of file using checksum
+
+	return SUCCESS, nil
+}
+
+func Ping(n *Node, wg *sync.WaitGroup) error {
+
+	var msg RPCMsg = RPCMsg{
+		RPCType:    CALL,
+		NodeAddr:   n.Addr,
+		Method:     PING,
+		Payload:    []byte("Ping"),
+		StatusCode: SUCCESS,
+	}
+
+	for i := 0; i < len(n.PeerTable); i++ {
+		var p Peer = n.PeerTable[i]
+		fmt.Printf("\nPEER: %+v\n", p)
+		SendMsg(n.UDPconn, msg, p.NodeAddr)
+	}
+
+	fmt.Println("\nPinging peers in cluster.")
+	fmt.Println("Ping Sent")
+	return nil
 }
 
 // when sending a message from a CALL rpc type, if the response takes too long, we drop and forget it.
@@ -135,7 +194,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 	case REPLY: // when peers/nodes send a call RPCType
 
-		var seg utils.DataSegment
+		var seg DataSegment
 		err := json.Unmarshal(msg.Payload, &seg)
 		if err != nil {
 			return err
@@ -147,12 +206,13 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			}
 
 			// match the clustername and then the NodeID that sent the request
-			t, ok := n.ClusterTable[msg.NodeID]
+			c, ok := n.ClusterTable[seg.ClusterName]
 			if !ok {
-				return fmt.Errorf("NodeID Key does not exist for thread")
+				return fmt.Errorf("Cluster does not exist")
 			}
 
-			if t.timeSince == 0 {
+			t, ok := c[msg.NodeID]
+			if !ok {
 				return fmt.Errorf("NodeID Key does not exist for thread")
 			}
 			t.bytesReceived += len(msg.Payload)
@@ -169,77 +229,26 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 	return nil
 }
 
-// buffer is the payload received from a peer
-func ReadRPCMessage(buffer []byte) (RPCMsg, error) {
-
-	var msg RPCMsg
-	err := json.Unmarshal(buffer, &msg)
-	if err != nil {
-		return RPCMsg{}, err
-	}
-	return msg, nil
-}
-
-// TODO add checksum parameter passed in by caller
-func ProbeFile(n *Node, fileKey string) (StatusCode, error) {
-
-	entry, path, err := n.Checkfile(fileKey, n.FILE_LOCATION)
-	if err != nil {
-		return ERROR, err
-	}
-
-	file, err := entry.Info()
-	if err != nil {
-		return ERROR, err
-	}
-	// obviously need to use the absolute route to the file
-	// reuse wd prefix? hmmm
-	fmt.Printf("Absolute Path: %s\n", path)
-	fileBuffer, err := os.ReadFile(path + file.Name())
-
-	if err != nil {
-		return ERROR, err
-	}
-
-	fmt.Printf("file length: %d\n", len(fileBuffer))
-
-	// check data integrity of file using checksum
-
-	return SUCCESS, nil
-}
-
-func Ping(n *Node, wg *sync.WaitGroup) error {
-
-	var msg RPCMsg = RPCMsg{
-		RPCType:    CALL,
-		NodeAddr:   n.Addr,
-		Method:     PING,
-		Payload:    []byte("Ping"),
-		StatusCode: SUCCESS,
-	}
-
-	for i := 0; i < len(n.PeerTable); i++ {
-		var p Peer = n.PeerTable[i]
-		fmt.Printf("\nPEER: %+v\n", p)
-		SendMsg(n.UDPconn, msg, p.NodeAddr)
-	}
-
-	fmt.Println("\nPinging peers in cluster.")
-	fmt.Println("Ping Sent")
-	return nil
-}
-
-type AverageTime int
-
 // will be received every reply to LEECH is received
+// Use ctx to cancel when leeching is done
 func MeasurePeerTransfer(n *Node, threadTimer *PeerThread) {
-	retrievedID := <-(*threadTimer).NodeIDChann
 
-	elapsedms := (time.Millisecond.Milliseconds() - threadTimer.timeSince)
-	threadTimer.averageBytes = threadTimer.bytesReceived / int(elapsedms)
+	for nodeID := range (*threadTimer).NodeIDChann {
+		fmt.Printf("Transfer by: %s\n", nodeID)
 
-	fmt.Printf("Bytes transferred per second: %dms\n", threadTimer.averageBytes)
-	fmt.Printf("Transfer by: %s\n", retrievedID)
-	threadTimer.bytesReceived = 0
+		currentTime := time.Now()
+		elapsedms := currentTime.Sub(threadTimer.timeSince)
+		threadTimer.averageBytes = threadTimer.bytesReceived / int(elapsedms)
 
+		fmt.Printf("Bytes transferred per second: %dms\n", threadTimer.averageBytes)
+		threadTimer.bytesReceived = 0
+	}
+
+}
+
+func NewPeerThread(cname ClusterName) PeerThread {
+	return PeerThread{
+		NodeIDChann: make(chan NodeID),
+		timeSince:   time.Now(),
+	}
 }
