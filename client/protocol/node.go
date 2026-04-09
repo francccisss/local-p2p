@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"client/utils"
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -34,8 +35,14 @@ type PeerThread struct {
 	ClusterName   ClusterName
 	averageBytes  int
 	bytesReceived int
+	ctx           *context.Context
 }
-type ClusterTable map[ClusterName]map[NodeID]PeerThread
+type ClusterTable map[ClusterName]Cluster
+
+type Cluster struct {
+	ctx         context.Context
+	PeerThreads map[NodeID]PeerThread
+}
 
 type NodeAddr struct {
 	IP   []byte

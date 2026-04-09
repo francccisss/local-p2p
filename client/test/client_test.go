@@ -2,6 +2,7 @@ package test
 
 import (
 	protoClient "client/protocol"
+	utils_test "client/test/utils"
 	"fmt"
 	"sync"
 	"testing"
@@ -11,7 +12,7 @@ import (
 func TestClientConn(t *testing.T) {
 
 	fmt.Printf("Client send udp")
-	UDPConn, err := InitUDPConn("3030")
+	UDPConn, err := utils_test.InitUDPConn("3030")
 	if err != nil {
 		fmt.Println(err)
 		t.Fail()
@@ -58,7 +59,7 @@ func TestClientConn(t *testing.T) {
 func TestFiles(t *testing.T) {
 
 	fmt.Printf("Client send udp")
-	UDPConn, err := InitUDPConn("3030")
+	UDPConn, err := utils_test.InitUDPConn("3030")
 	if err != nil {
 		fmt.Println(err)
 		t.Fail()

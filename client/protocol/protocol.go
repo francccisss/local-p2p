@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -211,7 +212,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 				return fmt.Errorf("Cluster does not exist")
 			}
 
-			t, ok := c[msg.NodeID]
+			t, ok := c.PeerThreads[msg.NodeID]
 			if !ok {
 				return fmt.Errorf("NodeID Key does not exist for thread")
 			}
@@ -233,22 +234,32 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 // Use ctx to cancel when leeching is done
 func MeasurePeerTransfer(n *Node, threadTimer *PeerThread) {
 
-	for nodeID := range (*threadTimer).NodeIDChann {
-		fmt.Printf("Transfer by: %s\n", nodeID)
+	for {
+		select {
+		case <-(*threadTimer.ctx).Done():
+			// clean up thread ORR ELSEEE!!!
+			return
+		case nodeID := <-(*threadTimer).NodeIDChann:
+			{
+				fmt.Printf("Transfer by: %s\n", nodeID)
 
-		currentTime := time.Now()
-		elapsedms := currentTime.Sub(threadTimer.timeSince)
-		threadTimer.averageBytes = threadTimer.bytesReceived / int(elapsedms)
+				currentTime := time.Now()
+				elapsedms := currentTime.Sub(threadTimer.timeSince)
+				threadTimer.averageBytes = threadTimer.bytesReceived / int(elapsedms)
 
-		fmt.Printf("Bytes transferred per second: %dms\n", threadTimer.averageBytes)
-		threadTimer.bytesReceived = 0
+				fmt.Printf("Bytes transferred per second: %dms\n", threadTimer.averageBytes)
+				threadTimer.bytesReceived = 0
+			}
+
+		}
 	}
 
 }
 
-func NewPeerThread(cname ClusterName) PeerThread {
+func NewPeerThread(cname ClusterName, ctx *context.Context) PeerThread {
 	return PeerThread{
 		NodeIDChann: make(chan NodeID),
 		timeSince:   time.Now(),
+		ctx:         ctx,
 	}
 }

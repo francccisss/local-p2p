@@ -22,23 +22,23 @@ func main() {
 	}
 	port, err := strconv.Atoi(args[0])
 
-	var clientNode protocol.Node = protocol.Node{
-		Addr: protocol.NodeAddr{
-			IP:   ip,
-			Port: port,
-		},
-		FILE_LOCATION: FILE_LOCATION,
-	}
-
 	if err != nil {
 		fmt.Println(err.Error())
 		panic("Shutting down")
 	}
 
-	addr := &net.UDPAddr{IP: clientNode.Addr.IP, Port: clientNode.Addr.Port}
+	addr := &net.UDPAddr{IP: ip, Port: port}
 
 	UDPConn, err := net.ListenUDP("udp", addr)
-	clientNode.UDPconn = UDPConn
+
+	clientNode := protocol.NewNode(
+		UDPConn,
+		protocol.NodeAddr{
+			IP:   addr.IP,
+			Port: addr.Port,
+		}, "Sender", FILE_LOCATION,
+	)
+
 	if err != nil {
 		fmt.Println(err.Error())
 		panic("Shutting down")
@@ -64,7 +64,7 @@ func main() {
 		}
 		fmt.Printf("Recevied Data: %+v\n", rpcMsg)
 		fmt.Printf("Body Contents: %s\n", rpcMsg.Payload)
-		err = protocol.RecvRPCMessage(&clientNode, rpcMsg)
+		err = protocol.RecvRPCMessage(clientNode, rpcMsg)
 
 		if err != nil {
 			fmt.Println(err.Error())

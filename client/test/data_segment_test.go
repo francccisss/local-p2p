@@ -1,12 +1,15 @@
 package test
 
 import (
+	"client/protocol"
 	clientProtocol "client/protocol"
+	utils_test "client/test/utils"
 	"fmt"
 	"io/fs"
 	"os"
 	_ "os"
 	"slices"
+	"strconv"
 	"testing"
 )
 
@@ -53,5 +56,40 @@ func TestDataSegmentation(t *testing.T) {
 }
 
 func TestMeasureArrivingBytes(t *testing.T) {
+	port := "5656"
+	UDPConn, err := utils_test.InitUDPConn(port)
+	if err != nil {
+		fmt.Println(err)
+		t.FailNow()
+	}
+	intport, err := strconv.Atoi(port)
+
+	if err != nil {
+		fmt.Println(err)
+		t.FailNow()
+	}
+	clientNode := clientProtocol.NewNode(UDPConn, clientProtocol.NodeAddr{IP: []byte("localhost"), Port: intport}, "LeechingNode", "/files/")
+	buff := make([]byte, 4096)
+
+	for {
+		n, _, err := UDPConn.ReadFromUDP(buff)
+		if err != nil {
+			fmt.Println(err)
+			t.FailNow()
+		}
+		msg, err := protocol.ReadRPCMessage(buff[:n])
+
+		if err != nil {
+			fmt.Println(err)
+			t.FailNow()
+		}
+
+		err = protocol.RecvRPCMessage(clientNode, msg)
+		if err != nil {
+			fmt.Println(err)
+			t.FailNow()
+		}
+
+	}
 
 }
