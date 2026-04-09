@@ -5,9 +5,11 @@ import (
 	"math"
 )
 
+// Payload of RPCMessage for LEECH call method
 type DataSegment struct {
-	SegmentNum int
-	DataChunk  []byte
+	SegmentNum  int
+	ClusterName string // string ID of the file to be sent
+	DataChunk   []byte
 }
 
 func VerifyChecksum() {

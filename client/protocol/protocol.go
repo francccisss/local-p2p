@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"client/utils"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -60,12 +61,6 @@ type RPCMsg struct {
 	Comment         string
 }
 
-type ThreadTimer struct {
-	timeSince   int64
-	NodeIDChann chan NodeID
-	averageTime int64
-}
-
 // when sending a message from a CALL rpc type, if the response takes too long, we drop and forget it.
 // and consider that peer as offline
 func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
@@ -100,7 +95,7 @@ func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
 // this will be a read-only table, and will only be written
 // on a new LEECH request.
 
-func RecvRPCMessage(n *Node, msg RPCMsg, timeTable map[NodeID]ThreadTimer) error {
+func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 	var newRPCMsg RPCMsg
 	switch msg.RPCType {
@@ -124,6 +119,8 @@ func RecvRPCMessage(n *Node, msg RPCMsg, timeTable map[NodeID]ThreadTimer) error
 				return err
 			}
 		case LEECH:
+		// when received create a thread, assign the RPCMessage payload
+		// with the clustername
 
 		case PROBE:
 
@@ -137,13 +134,20 @@ func RecvRPCMessage(n *Node, msg RPCMsg, timeTable map[NodeID]ThreadTimer) error
 		}
 
 	case REPLY: // when peers/nodes send a call RPCType
+
+		var seg utils.DataSegment
+		err := json.Unmarshal(msg.Payload, &seg)
+		if err != nil {
+			return err
+		}
 		switch msg.Method {
 		case LEECH:
 			if msg.StatusCode == ERROR {
-				return fmt.Errorf(msg.Comment)
+				return fmt.Errorf("%s", msg.Comment)
 			}
 
-			t, ok := timeTable[msg.NodeID]
+			// match the clustername and then the NodeID that sent the request
+			t, ok := n.ClusterTable[msg.NodeID]
 			if !ok {
 				return fmt.Errorf("NodeID Key does not exist for thread")
 			}
@@ -151,7 +155,9 @@ func RecvRPCMessage(n *Node, msg RPCMsg, timeTable map[NodeID]ThreadTimer) error
 			if t.timeSince == 0 {
 				return fmt.Errorf("NodeID Key does not exist for thread")
 			}
-			MeasurePeerTransfer(n, &t)
+			t.bytesReceived += len(msg.Payload)
+			t.NodeIDChann <- msg.NodeID
+
 		}
 
 		fmt.Println("Reply from Call Message")
@@ -226,9 +232,14 @@ func Ping(n *Node, wg *sync.WaitGroup) error {
 type AverageTime int
 
 // will be received every reply to LEECH is received
-func MeasurePeerTransfer(n *Node, threadTimer *ThreadTimer) {
+func MeasurePeerTransfer(n *Node, threadTimer *PeerThread) {
 	retrievedID := <-(*threadTimer).NodeIDChann
-	elapsedms := (time.Microsecond.Microseconds() - threadTimer.timeSince)
 
-	fmt.Printf("Measured transfer: %dms", elapsedms)
+	elapsedms := (time.Millisecond.Milliseconds() - threadTimer.timeSince)
+	threadTimer.averageBytes = threadTimer.bytesReceived / int(elapsedms)
+
+	fmt.Printf("Bytes transferred per second: %dms\n", threadTimer.averageBytes)
+	fmt.Printf("Transfer by: %s\n", retrievedID)
+	threadTimer.bytesReceived = 0
+
 }

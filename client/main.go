@@ -10,10 +10,6 @@ import (
 
 const FILE_LOCATION = "/files/"
 
-// to keep track of the thread communication for measuring
-// average bytes sent from peers for LEECHING
-var TimeTable map[protocol.NodeID]protocol.ThreadTimer
-
 func main() {
 
 	fmt.Println("Client")
@@ -68,7 +64,7 @@ func main() {
 		}
 		fmt.Printf("Recevied Data: %+v\n", rpcMsg)
 		fmt.Printf("Body Contents: %s\n", rpcMsg.Payload)
-		err = protocol.RecvRPCMessage(&clientNode, rpcMsg, TimeTable)
+		err = protocol.RecvRPCMessage(&clientNode, rpcMsg)
 
 		if err != nil {
 			fmt.Println(err.Error())

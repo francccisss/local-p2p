@@ -24,6 +24,18 @@ type Peer struct {
 	NodeAddr NodeAddr
 	NodeID   NodeID
 }
+
+type ClusterName string
+
+type PeerThread struct {
+	timeSince     int64
+	NodeIDChann   chan NodeID
+	ClusterName   ClusterName
+	averageBytes  int
+	bytesReceived int
+}
+type ClusterTable map[ClusterName]map[NodeID]PeerThread
+
 type NodeAddr struct {
 	IP   []byte
 	Port int
@@ -35,6 +47,21 @@ type Node struct {
 	NodeID        NodeID // 16bit len
 	Addr          NodeAddr
 	FILE_LOCATION string
+	ClusterTable  ClusterTable
+}
+
+func NewNode(conn *net.UDPConn, addr NodeAddr, nodeID NodeID, fileLoc string) *Node {
+	cl := make(ClusterTable)
+	i, ok := cl[""]
+	return &Node{
+		UDPconn:       conn,
+		Addr:          addr,
+		NodeID:        nodeID,
+		FILE_LOCATION: fileLoc,
+		PeerTable:     make([]Peer, 10),
+		ClusterTable:  cl,
+	}
+
 }
 
 // key for peer table to set status for current cluster
