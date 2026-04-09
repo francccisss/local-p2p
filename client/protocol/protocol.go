@@ -17,7 +17,7 @@ const (
 	PING Method = iota
 	LEECH
 	PROBE
-	MEASURE
+	SENDFILE
 )
 
 // Node can implement client connection interface
@@ -100,18 +100,18 @@ func ProbeFile(n *Node, fileKey string) (StatusCode, error) {
 	return SUCCESS, nil
 }
 
-func Ping(n *Node, wg *sync.WaitGroup) error {
+func Ping(n *Node, wg *sync.WaitGroup, cname ClusterName) error {
 
 	var msg RPCMsg = RPCMsg{
 		RPCType:    CALL,
 		NodeAddr:   n.Addr,
 		Method:     PING,
-		Payload:    []byte("Ping"),
+		Payload:    []byte(cname),
 		StatusCode: SUCCESS,
 	}
 
-	for i := 0; i < len(n.PeerTable); i++ {
-		var p Peer = n.PeerTable[i]
+	for i := 0; i < len(n.Peers); i++ {
+		var p Peer = n.Peers[i]
 		fmt.Printf("\nPEER: %+v\n", p)
 		SendMsg(n.UDPconn, msg, p.NodeAddr)
 	}
@@ -148,12 +148,21 @@ func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
 	return nil
 }
 
-// used for measuring start-time of the leech request, operating on different threads
-// string key is the key of the peer in the cluster, which maps to the time of when
-// the request has started for leeching
-// Race conditions:
-// this will be a read-only table, and will only be written
-// on a new LEECH request.
+// func SendDataFileSegments(n *Node, datas []DataSegment, cname ClusterName) {
+// 	for _, p := range n.Peers {
+//
+// 	}
+// }
+
+func Leech(n *Node, cname ClusterName) error {
+
+	c, ok := n.ClusterTable[cname]
+	if !ok {
+		return fmt.Errorf("Cluster does not exist")
+	}
+
+	return nil
+}
 
 func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
@@ -170,8 +179,11 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 		}
 		switch msg.Method {
 		case PING:
+			// sender triggers a ping on receiver(this)
+			// receiver sends their NodeID in return
+			// so that the sender can keep track of the receivers
 			newRPCMsg.Method = PING
-			newRPCMsg.Payload = []byte("Pong")
+			newRPCMsg.Payload = []byte(n.NodeID)
 			newRPCMsg.StatusCode = SUCCESS
 			err := SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
 			if err != nil {
@@ -179,9 +191,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 				return err
 			}
 		case LEECH:
-		// when received create a thread, assign the RPCMessage payload
-		// with the clustername
-
+		// reply to LEECH request
 		case PROBE:
 
 			fileKey := string(msg.Payload)
@@ -195,16 +205,17 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 	case REPLY: // when peers/nodes send a call RPCType
 
+		if msg.StatusCode == ERROR {
+			return fmt.Errorf("%s", msg.Comment)
+		}
 		var seg DataSegment
 		err := json.Unmarshal(msg.Payload, &seg)
 		if err != nil {
 			return err
 		}
+
 		switch msg.Method {
 		case LEECH:
-			if msg.StatusCode == ERROR {
-				return fmt.Errorf("%s", msg.Comment)
-			}
 
 			// match the clustername and then the NodeID that sent the request
 			c, ok := n.ClusterTable[seg.ClusterName]
@@ -219,6 +230,29 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			t.bytesReceived += len(msg.Payload)
 			t.NodeIDChann <- msg.NodeID
 
+		case PING:
+			// when receivers of the call responds/reply back to this
+			// process, create a new cluster with name and initialize
+			// pear threads and assign a peer thread that corresponds
+			// with the receiver's NodeID that it send from PING
+			convCname := ClusterName(string(msg.Payload))
+			c, ok := n.ClusterTable[convCname]
+			if !ok {
+				// return fmt.Errorf("NodeID Key does not exist for thread")
+				n.ClusterTable[convCname] = Cluster{
+					PeerThreads: make(map[NodeID]PeerThread),
+					ClusterName: convCname,
+				}
+
+				c = n.ClusterTable[convCname]
+			}
+
+			// update map
+			c.PeerThreads[msg.NodeID] = NewPeerThread(convCname)
+			n.ClusterTable[convCname] = c
+
+			// after setting up peers and creating go routines, create new threads
+
 		}
 
 		fmt.Println("Reply from Call Message")
@@ -232,11 +266,11 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 // will be received every reply to LEECH is received
 // Use ctx to cancel when leeching is done
-func MeasurePeerTransfer(n *Node, threadTimer *PeerThread) {
+func MeasurePeerTransfer(ctx *context.Context, n *Node, threadTimer *PeerThread) {
 
 	for {
 		select {
-		case <-(*threadTimer.ctx).Done():
+		case <-(*ctx).Done():
 			// clean up thread ORR ELSEEE!!!
 			return
 		case nodeID := <-(*threadTimer).NodeIDChann:
@@ -254,12 +288,4 @@ func MeasurePeerTransfer(n *Node, threadTimer *PeerThread) {
 		}
 	}
 
-}
-
-func NewPeerThread(cname ClusterName, ctx *context.Context) PeerThread {
-	return PeerThread{
-		NodeIDChann: make(chan NodeID),
-		timeSince:   time.Now(),
-		ctx:         ctx,
-	}
 }

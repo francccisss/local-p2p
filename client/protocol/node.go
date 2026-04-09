@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"client/utils"
-	"context"
 	"fmt"
 	"net"
 	"os"
@@ -35,13 +34,12 @@ type PeerThread struct {
 	ClusterName   ClusterName
 	averageBytes  int
 	bytesReceived int
-	ctx           *context.Context
 }
 type ClusterTable map[ClusterName]Cluster
 
 type Cluster struct {
-	ctx         context.Context
 	PeerThreads map[NodeID]PeerThread
+	ClusterName
 }
 
 type NodeAddr struct {
@@ -51,7 +49,7 @@ type NodeAddr struct {
 
 type Node struct {
 	UDPconn       *net.UDPConn
-	PeerTable     []Peer // TODO Change to map with array of Peer, key is the hash value of the file that is being transffered in the cluster
+	Peers         []Peer // TODO Change to map with array of Peer, key is the hash value of the file that is being transffered in the cluster
 	NodeID        NodeID // 16bit len
 	Addr          NodeAddr
 	FILE_LOCATION string
@@ -65,7 +63,7 @@ func NewNode(conn *net.UDPConn, addr NodeAddr, nodeID NodeID, fileLoc string) *N
 		Addr:          addr,
 		NodeID:        nodeID,
 		FILE_LOCATION: fileLoc,
-		PeerTable:     make([]Peer, 10),
+		Peers:         make([]Peer, 10),
 		ClusterTable:  cl,
 	}
 
@@ -138,4 +136,12 @@ func recursiveFileSearch(fileKey string, entries []os.DirEntry, wd *[]string) (o
 		return foundEntry, nil
 	}
 	return nil, fmt.Errorf("No entries matching the fileKey.")
+}
+
+func NewPeerThread(cname ClusterName) PeerThread {
+	return PeerThread{
+		ClusterName: cname,
+		NodeIDChann: make(chan NodeID),
+		timeSince:   time.Now(),
+	}
 }
