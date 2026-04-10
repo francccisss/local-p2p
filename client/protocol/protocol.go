@@ -115,6 +115,7 @@ func Ping(n *Node, peers []Peer, cname ClusterName) error {
 		StatusCode: SUCCESS,
 	}
 
+	fmt.Println(len(peers))
 	for _, p := range peers {
 		fmt.Printf("\nPEER: %+v\n", p)
 		newPingMsg := PingMessage{ClusterName: cname, Status: IDLE}
@@ -125,7 +126,11 @@ func Ping(n *Node, peers []Peer, cname ClusterName) error {
 		}
 
 		msg.Payload = b
-		SendMsg(n.UDPconn, msg, p.NodeAddr)
+		err = SendMsg(n.UDPconn, msg, p.NodeAddr)
+		if err != nil {
+			fmt.Printf("%s", err)
+			continue
+		}
 	}
 
 	fmt.Println("\nPinging peers in cluster.")
@@ -287,14 +292,12 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			if err != nil {
 				return err
 			}
+			// verified that the cluster does exist on other peers
+			// so create a cluster entry in the cluster table
 			convCname := ClusterName(string(msg.Payload))
 			c, ok := n.ClusterTable[convCname]
 			if !ok {
-				n.ClusterTable[convCname] = Cluster{
-					PeerThreads: make(map[NodeID]PeerThread),
-					ClusterName: convCname,
-				}
-
+				CreateCluster(n, convCname, IDLE)
 				c = n.ClusterTable[convCname]
 			}
 			// update map
@@ -304,8 +307,10 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 				NodeAddr: msg.NodeAddr,
 				NodeID:   msg.NodeID,
 			})
+
 			n.ClusterTable[convCname] = c
 
+			fmt.Printf("New Cluster %+v\n", n.ClusterTable[convCname].PeerThreads)
 			// after setting up peers and creating go routines, create new threads
 
 		}
