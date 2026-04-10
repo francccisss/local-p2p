@@ -18,10 +18,8 @@ const (
 
 type NodeID string
 
-// Peer is a node in a cluster
 type Peer struct {
-	PStatus  PeerStatus
-	LStatus  PeerStatus
+	Status   PeerStatus
 	NodeAddr NodeAddr
 	NodeID   NodeID
 }
@@ -35,12 +33,17 @@ type PeerThread struct {
 	averageBytes  int
 	bytesReceived int
 }
-type ClusterTable map[ClusterName]Cluster
 
 type Cluster struct {
+	Status      PeerStatus // status for current cluster of current peer
 	PeerThreads map[NodeID]PeerThread
 	ClusterName
+	Peers []Peer
 }
+
+// ClusterTable is used locally for handling threads spawned for different
+// peers
+type ClusterTable map[ClusterName]Cluster
 
 type NodeAddr struct {
 	IP   []byte
@@ -48,23 +51,23 @@ type NodeAddr struct {
 }
 
 type Node struct {
-	UDPconn       *net.UDPConn
-	Peers         []Peer // TODO Change to map with array of Peer, key is the hash value of the file that is being transffered in the cluster
-	NodeID        NodeID // 16bit len
-	Addr          NodeAddr
-	FILE_LOCATION string
-	ClusterTable  ClusterTable
+	UDPconn          *net.UDPConn
+	NeighboringNodes []Peer
+	NodeID           NodeID
+	Addr             NodeAddr
+	FILE_LOCATION    string
+	ClusterTable     ClusterTable
 }
 
 func NewNode(conn *net.UDPConn, addr NodeAddr, nodeID NodeID, fileLoc string) *Node {
 	cl := make(ClusterTable)
 	return &Node{
-		UDPconn:       conn,
-		Addr:          addr,
-		NodeID:        nodeID,
-		FILE_LOCATION: fileLoc,
-		Peers:         make([]Peer, 10),
-		ClusterTable:  cl,
+		UDPconn:          conn,
+		Addr:             addr,
+		NodeID:           nodeID,
+		FILE_LOCATION:    fileLoc,
+		NeighboringNodes: make([]Peer, 10),
+		ClusterTable:     cl,
 	}
 
 }

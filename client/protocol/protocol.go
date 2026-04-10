@@ -61,6 +61,11 @@ type RPCMsg struct {
 	Comment         string
 }
 
+type PingMessage struct {
+	Status PeerStatus
+	ClusterName
+}
+
 // buffer is the payload received from a peer
 func ReadRPCMessage(buffer []byte) (RPCMsg, error) {
 
@@ -100,19 +105,36 @@ func ProbeFile(n *Node, fileKey string) (StatusCode, error) {
 	return SUCCESS, nil
 }
 
-func Ping(n *Node, wg *sync.WaitGroup, cname ClusterName) error {
+func Ping(n *Node, cname ClusterName) error {
 
 	var msg RPCMsg = RPCMsg{
 		RPCType:    CALL,
 		NodeAddr:   n.Addr,
 		Method:     PING,
-		Payload:    []byte(cname),
 		StatusCode: SUCCESS,
 	}
 
-	for i := 0; i < len(n.Peers); i++ {
-		var p Peer = n.Peers[i]
+	c, ok := n.ClusterTable[cname]
+	if !ok {
+		return fmt.Errorf("Cluster does not exist")
+	}
+	for i := 0; i < len(c.Peers); i++ {
+		var p Peer = c.Peers[i]
 		fmt.Printf("\nPEER: %+v\n", p)
+		newPingMsg := PingMessage{ClusterName: cname}
+		c, ok := n.ClusterTable[cname]
+
+		if !ok {
+			return fmt.Errorf("Cluster does not exist")
+		}
+		newPingMsg.Status = c.Status
+
+		b, err := json.Marshal(newPingMsg)
+		if err != nil {
+			return err
+		}
+
+		msg.Payload = b
 		SendMsg(n.UDPconn, msg, p.NodeAddr)
 	}
 
@@ -161,6 +183,8 @@ func Leech(n *Node, cname ClusterName) error {
 		return fmt.Errorf("Cluster does not exist")
 	}
 
+	c.Status = LEECHING
+	n.ClusterTable[cname] = c
 	return nil
 }
 
@@ -183,9 +207,33 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			// receiver sends their NodeID in return
 			// so that the sender can keep track of the receivers
 			newRPCMsg.Method = PING
-			newRPCMsg.Payload = []byte(n.NodeID)
 			newRPCMsg.StatusCode = SUCCESS
-			err := SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
+
+			var incomingPingMsg PingMessage
+			err := json.Unmarshal(msg.Payload, &incomingPingMsg)
+			if err != nil {
+				return err
+			}
+
+			// it is always assumed that people that have the existing file should have an entry for cluster
+			c, ok := n.ClusterTable[incomingPingMsg.ClusterName]
+			// dont need to respond if does not exist anyways
+			if !ok {
+				fmt.Println("Cluster does not exist")
+				return err
+			}
+
+			newPingMsg := PingMessage{
+				Status:      c.Status,
+				ClusterName: c.ClusterName,
+			}
+			b, err := json.Marshal(newPingMsg)
+			if err != nil {
+				return err
+			}
+			newRPCMsg.Payload = b
+			err = SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
+
 			if err != nil {
 				fmt.Println("Unable to respond to ping")
 				return err
@@ -235,10 +283,15 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			// process, create a new cluster with name and initialize
 			// pear threads and assign a peer thread that corresponds
 			// with the receiver's NodeID that it send from PING
+
+			var pingMsg PingMessage
+			err := json.Unmarshal(msg.Payload, &pingMsg)
+			if err != nil {
+				return err
+			}
 			convCname := ClusterName(string(msg.Payload))
 			c, ok := n.ClusterTable[convCname]
 			if !ok {
-				// return fmt.Errorf("NodeID Key does not exist for thread")
 				n.ClusterTable[convCname] = Cluster{
 					PeerThreads: make(map[NodeID]PeerThread),
 					ClusterName: convCname,
@@ -246,9 +299,13 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 				c = n.ClusterTable[convCname]
 			}
-
 			// update map
 			c.PeerThreads[msg.NodeID] = NewPeerThread(convCname)
+			c.Peers = append(c.Peers, Peer{
+				Status:   pingMsg.Status,
+				NodeAddr: msg.NodeAddr,
+				NodeID:   msg.NodeID,
+			})
 			n.ClusterTable[convCname] = c
 
 			// after setting up peers and creating go routines, create new threads

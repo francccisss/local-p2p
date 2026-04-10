@@ -1,106 +1,37 @@
 package test
 
 import (
-	protoClient "client/protocol"
+	pro "client/protocol"
 	utils_test "client/test/utils"
 	"fmt"
-	"sync"
 	"testing"
-	"time"
 )
 
-func TestClientConn(t *testing.T) {
-
-	fmt.Printf("Client send udp")
-	UDPConn, err := utils_test.InitUDPConn("3030")
-	if err != nil {
-		fmt.Println(err)
-		t.Fail()
-	}
-
-	defer UDPConn.Close()
-	var clientNode protoClient.Node = protoClient.Node{
-		UDPconn: UDPConn,
-		Addr: protoClient.NodeAddr{
-			IP:   []byte("localhost"),
-			Port: 3030,
-		},
-	}
-	clientNode.PeerTable = []protoClient.Peer{
-		{
-			LStatus: protoClient.IDLE,
-			PStatus: protoClient.SEEDING,
-
-			NodeAddr: protoClient.NodeAddr{
-				IP:   []byte("localhost"),
-				Port: 5656,
-			},
-		},
-		{
-			LStatus: protoClient.IDLE,
-			PStatus: protoClient.SEEDING,
-
-			NodeAddr: protoClient.NodeAddr{
-				IP:   []byte("localhost"),
-				Port: 4209,
-			},
-		},
-	}
-
-	var wg sync.WaitGroup
-	err = protoClient.Ping(&clientNode, &wg)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	time.Sleep(time.Second * 3)
+type fileData struct {
+	location string
+	hash     pro.ClusterName
+	name     string
 }
 
-func TestFiles(t *testing.T) {
-
-	fmt.Printf("Client send udp")
-	UDPConn, err := utils_test.InitUDPConn("3030")
+func TestClientConn(t *testing.T) {
+	testPort := 3030
+	testFileData := fileData{"somewhere", "this is the hash of the file", "file.txt"}
+	NeighborBootstrap := []pro.Peer{
+		pro.Peer{Status: pro.LEECHING, NodeAddr: pro.NodeAddr{IP: []byte("localhost"), Port: 5656}},
+		pro.Peer{Status: pro.IDLE, NodeAddr: pro.NodeAddr{IP: []byte("localhost"), Port: 6952}},
+	}
+	UDPConn, err := utils_test.InitUDPConn(testPort)
 	if err != nil {
-		fmt.Println(err)
-		t.Fail()
+		fmt.Printf("[TEST ERROR]: %s", err)
+		t.FailNow()
 	}
-	defer UDPConn.Close()
-	var clientNode protoClient.Node = protoClient.Node{
-		UDPconn: UDPConn,
-		Addr: protoClient.NodeAddr{
-			IP:   []byte("localhost"),
-			Port: 3030,
-		},
-	}
-	clientNode.PeerTable = []protoClient.Peer{
-		{
-			LStatus: protoClient.IDLE,
-			PStatus: protoClient.SEEDING,
 
-			NodeAddr: protoClient.NodeAddr{
-				IP:   []byte("localhost"),
-				Port: 5656,
-			},
-		},
-		{
-			LStatus: protoClient.IDLE,
-			PStatus: protoClient.SEEDING,
+	client := pro.NewNode(UDPConn, pro.NodeAddr{IP: []byte("localhost"), Port: testPort}, "Pinger", "/files/")
 
-			NodeAddr: protoClient.NodeAddr{
-				IP:   []byte("localhost"),
-				Port: 4209,
-			},
-		},
+	// bootstrap neighbors retrieved from DHT server
+	for _, n := range NeighborBootstrap {
+		client.NeighboringNodes = append(client.NeighboringNodes, n)
 	}
-	msg := protoClient.RPCMsg{
-		NodeAddr: clientNode.Addr,
-		Payload:  []byte("sendingfile.webp"),
-		Method:   protoClient.PROBE,
-		RPCType:  protoClient.CALL,
-	}
-	err = protoClient.SendMsg(clientNode.UDPconn, msg, clientNode.PeerTable[0].NodeAddr)
-	if err != nil {
-		t.Fatalf("Failed from: %s", err.Error())
-	}
+	pro.Ping(client, testFileData.hash)
 
 }
