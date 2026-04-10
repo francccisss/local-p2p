@@ -42,8 +42,12 @@ func main() {
 		protocol.NodeAddr{
 			IP:   addr.IP,
 			Port: addr.Port,
-		}, "Sender", FILE_LOCATION,
+		},
+		"Receiver",
+		FILE_LOCATION,
 	)
+	testFileData := fileData{"somewhere", "this is the hash of the file", "file.txt"}
+	protocol.CreateCluster(clientNode, testFileData.hash, protocol.SEEDING)
 
 	if err != nil {
 		fmt.Println(err.Error())
