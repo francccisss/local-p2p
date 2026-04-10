@@ -3,6 +3,7 @@ package test
 import (
 	pro "client/protocol"
 	utils_test "client/test/utils"
+	"encoding/json"
 	"fmt"
 	"testing"
 )
@@ -32,6 +33,38 @@ func TestClientConn(t *testing.T) {
 	for _, n := range NeighborBootstrap {
 		client.NeighboringNodes = append(client.NeighboringNodes, n)
 	}
-	pro.Ping(client, testFileData.hash)
+	err = pro.Ping(client, testFileData.hash)
+	if err != nil {
+		fmt.Printf("[TEST ERROR]: %s", err)
+		t.FailNow()
+	}
+	buf := make([]byte, 2048)
+	n, _, err := client.UDPconn.ReadFromUDP(buf)
+	if err != nil {
+		fmt.Printf("[TEST ERROR]: %s", err)
+		t.FailNow()
+	}
+	waitResp := make(chan pro.PingMessage)
+
+	msg, err := pro.ReadRPCMessage(buf[:n])
+
+	if err != nil {
+		fmt.Printf("[TEST ERROR]: %s", err)
+		t.FailNow()
+	}
+
+	var pingMsg pro.PingMessage
+	err = json.Unmarshal(msg.Payload, &pingMsg)
+
+	if err != nil {
+		fmt.Printf("[TEST ERROR]: %s", err)
+		t.FailNow()
+	}
+
+	waitResp <- pingMsg
+
+	resp := <-waitResp
+
+	fmt.Printf("Response: %+v", resp)
 
 }

@@ -10,6 +10,12 @@ import (
 
 const FILE_LOCATION = "/files/"
 
+type fileData struct {
+	location string
+	hash     protocol.ClusterName
+	name     string
+}
+
 func main() {
 
 	fmt.Println("Client")

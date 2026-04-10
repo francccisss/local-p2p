@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"strconv"
-	"sync"
 	"time"
 )
 
@@ -105,7 +104,10 @@ func ProbeFile(n *Node, fileKey string) (StatusCode, error) {
 	return SUCCESS, nil
 }
 
-func Ping(n *Node, cname ClusterName) error {
+// n asks what other peers if they have this cname
+// in their table, if so, they add this node and set the status
+// to leeching.
+func Ping(n *Node, peers []Peer, cname ClusterName) error {
 
 	var msg RPCMsg = RPCMsg{
 		RPCType:    CALL,
@@ -114,20 +116,9 @@ func Ping(n *Node, cname ClusterName) error {
 		StatusCode: SUCCESS,
 	}
 
-	c, ok := n.ClusterTable[cname]
-	if !ok {
-		return fmt.Errorf("Cluster does not exist")
-	}
-	for i := 0; i < len(c.Peers); i++ {
-		var p Peer = c.Peers[i]
+	for _, p := range peers {
 		fmt.Printf("\nPEER: %+v\n", p)
-		newPingMsg := PingMessage{ClusterName: cname}
-		c, ok := n.ClusterTable[cname]
-
-		if !ok {
-			return fmt.Errorf("Cluster does not exist")
-		}
-		newPingMsg.Status = c.Status
+		newPingMsg := PingMessage{ClusterName: cname, Status: LEECHING}
 
 		b, err := json.Marshal(newPingMsg)
 		if err != nil {
@@ -344,5 +335,22 @@ func MeasurePeerTransfer(ctx *context.Context, n *Node, threadTimer *PeerThread)
 
 		}
 	}
+
+}
+
+func CreateCluster(n *Node, cname ClusterName, status PeerStatus) {
+
+	newCluster := Cluster{
+		Status:      status,
+		PeerThreads: make(map[NodeID]PeerThread, 10),
+		Peers:       make([]Peer, 10),
+		ClusterName: cname,
+	}
+
+	_, ok := n.ClusterTable[cname]
+	if !ok {
+		n.ClusterTable[cname] = newCluster
+	}
+	fmt.Printf("Cluster %s already exists\n", cname)
 
 }

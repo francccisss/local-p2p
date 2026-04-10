@@ -9,7 +9,6 @@ import (
 	"os"
 	_ "os"
 	"slices"
-	"strconv"
 	"testing"
 )
 
@@ -56,19 +55,14 @@ func TestDataSegmentation(t *testing.T) {
 }
 
 func TestMeasureArrivingBytes(t *testing.T) {
-	port := "5656"
+	port := 5656
 	UDPConn, err := utils_test.InitUDPConn(port)
 	if err != nil {
 		fmt.Println(err)
 		t.FailNow()
 	}
-	intport, err := strconv.Atoi(port)
 
-	if err != nil {
-		fmt.Println(err)
-		t.FailNow()
-	}
-	clientNode := clientProtocol.NewNode(UDPConn, clientProtocol.NodeAddr{IP: []byte("localhost"), Port: intport}, "LeechingNode", "/files/")
+	clientNode := clientProtocol.NewNode(UDPConn, clientProtocol.NodeAddr{IP: []byte("localhost"), Port: port}, "LeechingNode", "/files/")
 	buff := make([]byte, 4096)
 
 	for {
