@@ -294,7 +294,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			}
 			// verified that the cluster does exist on other peers
 			// so create a cluster entry in the cluster table
-			convCname := ClusterName(string(msg.Payload))
+			convCname := pingMsg.ClusterName
 			c, ok := n.ClusterTable[convCname]
 			if !ok {
 				CreateCluster(n, convCname, IDLE)
@@ -310,7 +310,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 			n.ClusterTable[convCname] = c
 
-			fmt.Printf("New Cluster %+v\n", n.ClusterTable[convCname].PeerThreads)
+			fmt.Printf("Peer thread created in cluster %s, %+v\n", convCname, n.ClusterTable[convCname].PeerThreads[msg.NodeID])
 			// after setting up peers and creating go routines, create new threads
 
 		}

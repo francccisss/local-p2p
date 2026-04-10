@@ -37,8 +37,8 @@ type PeerThread struct {
 type Cluster struct {
 	Status      PeerStatus // status for current cluster of current peer
 	PeerThreads map[NodeID]PeerThread
-	ClusterName
-	Peers []Peer
+	ClusterName ClusterName
+	Peers       []Peer
 }
 
 // ClusterTable is used locally for handling threads spawned for different
