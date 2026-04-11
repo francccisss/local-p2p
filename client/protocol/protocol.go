@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"time"
 )
@@ -74,70 +73,6 @@ func ReadRPCMessage(buffer []byte) (RPCMsg, error) {
 	return msg, nil
 }
 
-// TODO add checksum parameter passed in by caller
-func ProbeFile(n *Node, fileKey string) (StatusCode, error) {
-
-	entry, path, err := n.Checkfile(fileKey, n.FILE_LOCATION)
-	if err != nil {
-		return ERROR, err
-	}
-
-	file, err := entry.Info()
-	if err != nil {
-		return ERROR, err
-	}
-	// obviously need to use the absolute route to the file
-	// reuse wd prefix? hmmm
-	fmt.Printf("Absolute Path: %s\n", path)
-	fileBuffer, err := os.ReadFile(path + file.Name())
-
-	if err != nil {
-		return ERROR, err
-	}
-
-	fmt.Printf("file length: %d\n", len(fileBuffer))
-
-	// check data integrity of file using checksum
-
-	return SUCCESS, nil
-}
-
-// n asks what other peers if they have this cname
-// in their table, if so, they add this node and set the status to idle.
-// This function can be used within a cluster, if passed in the peers of that cluster
-// or the neighboring nodes for creating a cluster table for cname in the sender process
-func Ping(n *Node, peers []Peer, cname ClusterName) error {
-
-	var msg RPCMsg = RPCMsg{
-		RPCType:    CALL,
-		NodeAddr:   n.Addr,
-		Method:     PING,
-		StatusCode: SUCCESS,
-	}
-
-	fmt.Println(len(peers))
-	for _, p := range peers {
-		fmt.Printf("\nPEER: %+v\n", p)
-		newPingMsg := PingMessage{ClusterName: cname, Status: IDLE}
-
-		b, err := json.Marshal(newPingMsg)
-		if err != nil {
-			return err
-		}
-
-		msg.Payload = b
-		err = SendMsg(n.UDPconn, msg, p.NodeAddr)
-		if err != nil {
-			fmt.Printf("%s", err)
-			continue
-		}
-	}
-
-	fmt.Println("\nPinging peers in cluster.")
-	fmt.Println("Ping Sent")
-	return nil
-}
-
 // when sending a message from a CALL rpc type, if the response takes too long, we drop and forget it.
 // and consider that peer as offline
 func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
@@ -170,18 +105,6 @@ func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
 //
 // 	}
 // }
-
-func Leech(n *Node, cname ClusterName) error {
-
-	c, ok := n.ClusterTable[cname]
-	if !ok {
-		return fmt.Errorf("Cluster does not exist")
-	}
-
-	c.Status = LEECHING
-	n.ClusterTable[cname] = c
-	return nil
-}
 
 func RecvRPCMessage(n *Node, msg RPCMsg) error {
 

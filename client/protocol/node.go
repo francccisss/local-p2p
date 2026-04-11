@@ -1,11 +1,9 @@
 package protocol
 
 import (
-	"client/utils"
 	"fmt"
 	"net"
-	"os"
-	"time"
+	"strconv"
 )
 
 type PeerStatus int
@@ -18,33 +16,6 @@ const (
 
 type NodeID string
 
-type Peer struct {
-	Status   PeerStatus
-	NodeAddr NodeAddr
-	NodeID   NodeID
-}
-
-type ClusterName string
-
-type PeerThread struct {
-	timeSince     time.Time
-	NodeIDChann   chan NodeID
-	ClusterName   ClusterName
-	averageBytes  int
-	bytesReceived int
-}
-
-type Cluster struct {
-	Status      PeerStatus // status for current cluster of current peer
-	PeerThreads map[NodeID]PeerThread
-	ClusterName ClusterName
-	Peers       []Peer
-}
-
-// ClusterTable is used locally for handling threads spawned for different
-// peers
-type ClusterTable map[ClusterName]Cluster
-
 type NodeAddr struct {
 	IP   []byte
 	Port int
@@ -52,99 +23,35 @@ type NodeAddr struct {
 
 type Node struct {
 	UDPconn          *net.UDPConn
-	NeighboringNodes []Peer
+	NeighboringNodes []NodeAddr // used for bootstrapping
 	NodeID           NodeID
 	Addr             NodeAddr
 	FILE_LOCATION    string
-	ClusterTable     ClusterTable
 }
 
 func NewNode(conn *net.UDPConn, addr NodeAddr, nodeID NodeID, fileLoc string) *Node {
-	cl := make(ClusterTable)
 	return &Node{
 		UDPconn:          conn,
 		Addr:             addr,
 		NodeID:           nodeID,
 		FILE_LOCATION:    fileLoc,
-		NeighboringNodes: make([]Peer, 10),
-		ClusterTable:     cl,
+		NeighboringNodes: make([]NodeAddr, 10),
 	}
 
 }
 
-// key for peer table to set status for current cluster
-func (n *Node) SetStatus(key string) {
+func InitUDPConn(port int) (*net.UDPConn, error) {
 
-}
-
-// Node's internal function not including reponding to rpc requests from other peers
-
-func (n *Node) Checkfile(fileKey string, FILE_LOCATION string) (os.DirEntry, string, error) {
-
-	programwd, err := os.Getwd()
+	laddr, err := net.ResolveUDPAddr("udp", "localhost:"+strconv.Itoa(port))
 	if err != nil {
-		fmt.Printf("Error Unable to Read Get Current Working Directory\n")
-		fmt.Printf("Reason: %s\n", err)
-		return nil, "", err
+		fmt.Println("Error Unable to resolve UDP Addr")
+		return nil, err
 	}
-	wd := []string{programwd}
-	wd = append(wd, FILE_LOCATION)
-
-	entries, err := os.ReadDir(utils.ConcatStr(&wd))
-
-	entry, err := recursiveFileSearch(fileKey, entries, &wd)
-
+	UDPConn, err := net.ListenUDP("udp", laddr)
 	if err != nil {
-		return nil, "", fmt.Errorf("No entries matching the fileKey.")
+		fmt.Println("Error Unable to create a listener for UDP packets")
+		return nil, err
 	}
+	return UDPConn, nil
 
-	return entry, utils.ConcatStr(&wd), nil
-}
-
-// initializes `wd` with the current working directory of the program
-// appended with the file location of the user and as `entries` array is iterated
-// and if the current entry is a Directory the `wd` is appended with the current name
-// of the directory, and if not then continue.
-// If the current file is not a directory and matches the `fileKey` the return the entry of that file
-func recursiveFileSearch(fileKey string, entries []os.DirEntry, wd *[]string) (os.DirEntry, error) {
-	for _, entry := range entries {
-		info, err := entry.Info()
-		entryName := info.Name()
-		fmt.Printf("entry: %s\n", entryName)
-		if err != nil {
-			fmt.Printf("Error Unable to get info for file: %s\n", entryName)
-			fmt.Printf("Reason: %s\n", err)
-			continue
-		}
-		if !info.IsDir() {
-			if entryName == fileKey {
-				return entry, nil
-			}
-			continue
-		}
-		currentDirectory := entryName + "/"
-		*wd = append(*wd, currentDirectory)
-		curDirEntries, err := os.ReadDir(utils.ConcatStr(wd))
-		if err != nil {
-			*wd = (*wd)[:len(*wd)-1]
-			fmt.Printf("Error Unable to Read from Directory: %s\n", entryName)
-			fmt.Printf("Reason: %s\n", err)
-			continue
-		}
-		foundEntry, err := recursiveFileSearch(fileKey, curDirEntries, wd)
-		if err != nil {
-			*wd = (*wd)[:len(*wd)-1]
-			continue
-		}
-		return foundEntry, nil
-	}
-	return nil, fmt.Errorf("No entries matching the fileKey.")
-}
-
-func NewPeerThread(cname ClusterName) PeerThread {
-	return PeerThread{
-		ClusterName: cname,
-		NodeIDChann: make(chan NodeID),
-		timeSince:   time.Now(),
-	}
 }

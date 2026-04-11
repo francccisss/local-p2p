@@ -1,8 +1,10 @@
 package protocol
 
 import (
+	"client/utils"
 	"fmt"
 	"math"
+	"os"
 )
 
 // Payload of RPCMessage for LEECH call method
@@ -66,4 +68,66 @@ func DataSegmentation(buf []byte, numOfSegments int) ([]DataSegment, error) {
 	}
 
 	return tmp, nil
+}
+
+func Checkfile(hashKey string, FILE_LOCATION string) (os.DirEntry, string, error) {
+
+	programwd, err := os.Getwd()
+	if err != nil {
+		fmt.Printf("Error Unable to Read Get Current Working Directory\n")
+		fmt.Printf("Reason: %s\n", err)
+		return nil, "", err
+	}
+	wd := []string{programwd}
+	wd = append(wd, FILE_LOCATION)
+
+	entries, err := os.ReadDir(utils.ConcatStr(&wd))
+
+	entry, err := recursiveFileSearch(hashKey, entries, &wd)
+
+	if err != nil {
+		return nil, "", fmt.Errorf("No entries matching the fileKey.")
+	}
+
+	return entry, utils.ConcatStr(&wd), nil
+}
+
+// initializes `wd` with the current working directory of the program
+// appended with the file location of the user and as `entries` array is iterated
+// and if the current entry is a Directory the `wd` is appended with the current name
+// of the directory, and if not then continue.
+// If the current file is not a directory and matches the `fileKey` the return the entry of that file
+func recursiveFileSearch(fileKey string, entries []os.DirEntry, wd *[]string) (os.DirEntry, error) {
+	for _, entry := range entries {
+		info, err := entry.Info()
+		entryName := info.Name()
+		fmt.Printf("entry: %s\n", entryName)
+		if err != nil {
+			fmt.Printf("Error Unable to get info for file: %s\n", entryName)
+			fmt.Printf("Reason: %s\n", err)
+			continue
+		}
+		if !info.IsDir() {
+			if entryName == fileKey {
+				return entry, nil
+			}
+			continue
+		}
+		currentDirectory := entryName + "/"
+		*wd = append(*wd, currentDirectory)
+		curDirEntries, err := os.ReadDir(utils.ConcatStr(wd))
+		if err != nil {
+			*wd = (*wd)[:len(*wd)-1]
+			fmt.Printf("Error Unable to Read from Directory: %s\n", entryName)
+			fmt.Printf("Reason: %s\n", err)
+			continue
+		}
+		foundEntry, err := recursiveFileSearch(fileKey, curDirEntries, wd)
+		if err != nil {
+			*wd = (*wd)[:len(*wd)-1]
+			continue
+		}
+		return foundEntry, nil
+	}
+	return nil, fmt.Errorf("No entries matching the fileKey.")
 }
