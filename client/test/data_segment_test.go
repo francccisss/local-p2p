@@ -16,7 +16,7 @@ func TestDataSegmentation(t *testing.T) {
 	n := clientProtocol.Node{
 		FILE_LOCATION: "/files/",
 	}
-	en, path, err := clientProtocol.Checkfile("sendingfile.webp", n.FILE_LOCATION)
+	en, path, err := clientProtocol.Checkfile("newfile.webp", n.FILE_LOCATION)
 	if err != nil {
 		fmt.Println(err)
 		t.FailNow()
@@ -45,7 +45,7 @@ func TestDataSegmentation(t *testing.T) {
 
 	fm |= fs.ModePerm
 
-	err = os.WriteFile("newfile.webp", conctData, fm)
+	err = os.WriteFile("prettychill.webp", conctData, fm)
 
 	if err != nil {
 		fmt.Println(err)
@@ -54,7 +54,7 @@ func TestDataSegmentation(t *testing.T) {
 }
 
 func TestMeasureArrivingBytes(t *testing.T) {
-	port := 5656
+	port := 3030
 	UDPConn, err := clientProtocol.InitUDPConn(port)
 	if err != nil {
 		fmt.Println(err)

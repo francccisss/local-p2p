@@ -44,10 +44,10 @@ func CreateCluster(n *Node, cname ClusterName) {
 	if !ok {
 		n.ClusterTable[cname] = newCluster
 
-		fmt.Printf("New Cluster created for %s\n", cname)
+		fmt.Printf("New Cluster created for '%s'\n", cname)
 		return
 	}
-	fmt.Printf("Cluster %s already exists\n", cname)
+	fmt.Printf("Cluster '%s' already exists\n", cname)
 
 }
 
@@ -145,6 +145,7 @@ func Ping(n *Node, cname ClusterName) error {
 		NodeAddr:   n.Addr,
 		Method:     PING,
 		StatusCode: SUCCESS,
+		NodeID:     n.NodeID,
 	}
 
 	// for bootstrapped nodes

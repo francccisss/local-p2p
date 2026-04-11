@@ -87,7 +87,7 @@ func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
 		return err
 	}
 
-	fmt.Printf("\nSend to: %s\n", ip+":"+port)
+	fmt.Printf("Sending to: %s\n", ip+":"+port)
 	n, err := conn.WriteTo(b, raddr)
 	if err != nil {
 		return err
@@ -125,6 +125,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 				return err
 			}
 
+			fmt.Printf("Checking cluster table for '%s' cluster\n", incomingPingMsg.ClusterName)
 			// it is always assumed that people that have the existing file should have an entry for cluster
 			c, ok := n.ClusterTable[incomingPingMsg.ClusterName]
 			// dont need to respond if does not exist anyways
@@ -139,6 +140,21 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 				return fmt.Errorf("Unable to deliver reply from PING CALL")
 			}
 
+			fmt.Printf("Cluster '%s' exists\n", incomingPingMsg.ClusterName)
+
+			fmt.Printf("Adding '%s' to the cluster\n", msg.NodeID)
+
+			c.ClusterPeers = append(c.ClusterPeers, ClusterPeer{msg.NodeAddr, msg.NodeID})
+			n.ClusterTable[incomingPingMsg.ClusterName] = c
+
+			for _, cp := range c.ClusterPeers {
+				if cp.NodeID != msg.NodeID {
+					continue
+				}
+				fmt.Printf("Added '%s' to the cluster\n", cp.NodeID)
+			}
+
+			fmt.Printf("Sending reply back to '%s'\n", msg.NodeID)
 			newPingMsg := PingMessage{
 				Status:      c.Peer.Status,
 				ClusterName: c.ClusterName,
@@ -154,6 +170,8 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 				fmt.Println("Unable to respond to ping")
 				return err
 			}
+
+			fmt.Printf("Reply sent\n")
 		case LEECH:
 		case PROBE:
 		}
@@ -217,8 +235,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 			n.ClusterTable[convCname] = c
 
-			fmt.Printf("Peer thread created in cluster %s, %+v\n", convCname, n.ClusterTable[convCname].ClusterPeerThreads[msg.NodeID])
-			// after setting up peers and creating go routines, create new threads
+			fmt.Printf("Peer thread created in cluster '%s'\n", convCname)
 		}
 		fmt.Println("Reply from Call Message")
 	default:
