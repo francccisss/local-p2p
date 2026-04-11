@@ -3,7 +3,6 @@ package test
 import (
 	"client/protocol"
 	clientProtocol "client/protocol"
-	utils_test "client/test/utils"
 	"fmt"
 	"io/fs"
 	"os"
@@ -17,7 +16,7 @@ func TestDataSegmentation(t *testing.T) {
 	n := clientProtocol.Node{
 		FILE_LOCATION: "/files/",
 	}
-	en, path, err := n.Checkfile("sendingfile.webp", n.FILE_LOCATION)
+	en, path, err := clientProtocol.Checkfile("sendingfile.webp", n.FILE_LOCATION)
 	if err != nil {
 		fmt.Println(err)
 		t.FailNow()
@@ -56,7 +55,7 @@ func TestDataSegmentation(t *testing.T) {
 
 func TestMeasureArrivingBytes(t *testing.T) {
 	port := 5656
-	UDPConn, err := utils_test.InitUDPConn(port)
+	UDPConn, err := clientProtocol.InitUDPConn(port)
 	if err != nil {
 		fmt.Println(err)
 		t.FailNow()

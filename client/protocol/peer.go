@@ -31,18 +31,18 @@ type Cluster struct {
 
 type ClusterTable map[ClusterName]Cluster
 
-func CreateCluster(clTable ClusterTable, cname ClusterName) {
+func CreateCluster(n *Node, cname ClusterName) {
 
 	newCluster := Cluster{
-		ClusterPeerThreads: make(map[NodeID]ClusterPeerThread, 10),
-		ClusterPeers:       make([]ClusterPeer, 10),
+		ClusterPeerThreads: make(map[NodeID]ClusterPeerThread),
+		ClusterPeers:       []ClusterPeer{},
 		Peer:               Peer{Status: IDLE},
 		ClusterName:        cname,
 	}
 
-	_, ok := clTable[cname]
+	_, ok := n.ClusterTable[cname]
 	if !ok {
-		clTable[cname] = newCluster
+		n.ClusterTable[cname] = newCluster
 
 		fmt.Printf("New Cluster created for %s\n", cname)
 		return
@@ -90,13 +90,11 @@ type Peer struct {
 	ClusterName ClusterName
 }
 
-func NewPeer(cname ClusterName) *Peer {
-
+func (c *Cluster) NewPeer() *Peer {
 	return &Peer{
 		Status:      IDLE,
-		ClusterName: cname,
+		ClusterName: c.ClusterName,
 	}
-
 }
 
 // -----------------------------------------
@@ -104,9 +102,10 @@ func NewPeer(cname ClusterName) *Peer {
 // -----------------------------------------
 
 // TODO add checksum parameter passed in by caller
-func (p *Peer) ProbeFile(n *Node) (StatusCode, error) {
+// each file corresponds to a cluster name
+func ProbeFile(n *Node, cname ClusterName) (StatusCode, error) {
 
-	entry, path, err := Checkfile(string(p.ClusterName), n.FILE_LOCATION)
+	entry, path, err := Checkfile(string(cname), n.FILE_LOCATION)
 	if err != nil {
 		return ERROR, err
 	}
@@ -139,7 +138,7 @@ func (p *Peer) ProbeFile(n *Node) (StatusCode, error) {
 // in their table, if so, they add this node and set the status to idle.
 // This function can be used within a cluster, if passed in the peers of that cluster
 // or the neighboring nodes for creating a cluster table for p.cname in the sender process
-func (p *Peer) Ping(n *Node, clTable ClusterTable) error {
+func Ping(n *Node, cname ClusterName) error {
 
 	var msg RPCMsg = RPCMsg{
 		RPCType:    CALL,
@@ -148,15 +147,15 @@ func (p *Peer) Ping(n *Node, clTable ClusterTable) error {
 		StatusCode: SUCCESS,
 	}
 
-	c, ok := clTable[p.ClusterName]
+	// for bootstrapped nodes
+	c, ok := n.ClusterTable[cname]
 	if !ok {
 		return fmt.Errorf("ERROR: Cluster not found")
 	}
-	peers := c.ClusterPeers
-	fmt.Println(len(peers))
-	for _, p := range peers {
+	fmt.Println(len(c.ClusterPeers))
+	for _, p := range c.ClusterPeers {
 		fmt.Printf("\nPEER: %+v\n", p)
-		newPingMsg := PingMessage{ClusterName: c.ClusterName, Status: IDLE}
+		newPingMsg := PingMessage{ClusterName: cname, Status: IDLE}
 
 		b, err := json.Marshal(newPingMsg)
 		if err != nil {
@@ -164,7 +163,7 @@ func (p *Peer) Ping(n *Node, clTable ClusterTable) error {
 		}
 
 		msg.Payload = b
-		err = SendMsg(n.UDPconn, msg, n.Addr)
+		err = SendMsg(n.UDPconn, msg, p.Addr)
 		if err != nil {
 			fmt.Printf("%s", err)
 			continue
@@ -176,14 +175,14 @@ func (p *Peer) Ping(n *Node, clTable ClusterTable) error {
 	return nil
 }
 
-func (p *Peer) Leech(n *Node, clTable ClusterTable) error {
+func Leech(n *Node, cname ClusterName) error {
 
-	c, ok := clTable[p.ClusterName]
+	c, ok := n.ClusterTable[cname]
 	if !ok {
 		return fmt.Errorf("Cluster does not exist")
 	}
 
-	p.Status = LEECHING
-	clTable[p.ClusterName] = c
+	c.Peer.Status = LEECHING
+	n.ClusterTable[cname] = c
 	return nil
 }

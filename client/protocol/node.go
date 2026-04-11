@@ -27,15 +27,18 @@ type Node struct {
 	NodeID           NodeID
 	Addr             NodeAddr
 	FILE_LOCATION    string
+	ClusterTable     ClusterTable
 }
 
 func NewNode(conn *net.UDPConn, addr NodeAddr, nodeID NodeID, fileLoc string) *Node {
+	newClusterTable := make(ClusterTable)
 	return &Node{
 		UDPconn:          conn,
 		Addr:             addr,
 		NodeID:           nodeID,
 		FILE_LOCATION:    fileLoc,
 		NeighboringNodes: make([]NodeAddr, 10),
+		ClusterTable:     newClusterTable,
 	}
 
 }
