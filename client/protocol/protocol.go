@@ -250,7 +250,6 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			}
 			fmt.Println("Success")
 		}
-
 	case REPLY: // when peers/nodes send a call RPCType
 
 		if msg.StatusCode == ERROR {
@@ -279,7 +278,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			t.NodeIDChann <- msg.NodeID
 
 		case PING:
-			// when receivers of the call responds/reply back to this
+			// When receivers of the call responds/reply back to this
 			// process, create a new cluster with name and initialize
 			// pear threads and assign a peer thread that corresponds
 			// with the receiver's NodeID that it send from PING
@@ -292,8 +291,10 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			if err != nil {
 				return err
 			}
-			// verified that the cluster does exist on other peers
+			// Verified that the cluster does exist on other peers
 			// so create a cluster entry in the cluster table
+
+			// State of new node is set to IDLE on default
 			convCname := pingMsg.ClusterName
 			c, ok := n.ClusterTable[convCname]
 			if !ok {
@@ -312,15 +313,10 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 			fmt.Printf("Peer thread created in cluster %s, %+v\n", convCname, n.ClusterTable[convCname].PeerThreads[msg.NodeID])
 			// after setting up peers and creating go routines, create new threads
-
 		}
-
 		fmt.Println("Reply from Call Message")
-
 	default:
-
 	}
-
 	return nil
 }
 

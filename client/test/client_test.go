@@ -13,12 +13,13 @@ type fileData struct {
 	name     string
 }
 
-func TestClientConn(t *testing.T) {
+func TestClientPing(t *testing.T) {
 	testPort := 3030
-	testFileData := fileData{"somewhere", "this is the hash of the file", "file.txt"}
+	testFileData := fileData{hash: "this is the hash of the file"}
 	NeighborBootstrap := []pro.Peer{
 		pro.Peer{NodeID: "localhost:5656", Status: pro.LEECHING, NodeAddr: pro.NodeAddr{IP: []byte("localhost"), Port: 5656}},
-		pro.Peer{NodeID: "localhost:6952", Status: pro.IDLE, NodeAddr: pro.NodeAddr{IP: []byte("localhost"), Port: 6952}},
+		pro.Peer{NodeID: "localhost:4500", Status: pro.LEECHING, NodeAddr: pro.NodeAddr{IP: []byte("localhost"), Port: 4500}},
+		pro.Peer{NodeID: "localhost:4269", Status: pro.IDLE, NodeAddr: pro.NodeAddr{IP: []byte("localhost"), Port: 4269}},
 	}
 	UDPConn, err := utils_test.InitUDPConn(testPort)
 	if err != nil {
