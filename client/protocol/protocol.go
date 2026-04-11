@@ -1,12 +1,10 @@
 package protocol
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
-	"time"
 )
 
 type Method int
@@ -100,67 +98,69 @@ func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
 	return nil
 }
 
-// func SendDataFileSegments(n *Node, datas []DataSegment, cname ClusterName) {
-// 	for _, p := range n.Peers {
-//
-// 	}
-// }
+func (p *Peer) HandlePing(n *Node, clTable ClusterTable, msg RPCMsg) error {
+
+	var newRPCMsg RPCMsg
+	fmt.Println("Call Message")
+	// PRELOADING RPC MESSAGE
+	newRPCMsg = RPCMsg{
+		RPCType:  REPLY,
+		NodeID:   n.NodeID,
+		NodeAddr: NodeAddr{IP: n.Addr.IP, Port: n.Addr.Port},
+	}
+	// sender triggers a ping on receiver(this)
+	// receiver sends their NodeID in return
+	// so that the sender can keep track of the receivers
+	newRPCMsg.Method = PING
+	newRPCMsg.StatusCode = SUCCESS
+
+	var incomingPingMsg PingMessage
+	err := json.Unmarshal(msg.Payload, &incomingPingMsg)
+	if err != nil {
+		return err
+	}
+
+	// it is always assumed that people that have the existing file should have an entry for cluster
+	_, ok := clTable[incomingPingMsg.ClusterName]
+	// dont need to respond if does not exist anyways
+	if !ok {
+		fmt.Println("Cluster does not exist")
+		newRPCMsg.StatusCode = ERROR
+		newRPCMsg.Comment = fmt.Sprintf("Cluster %s does not exist", incomingPingMsg.ClusterName)
+		err = SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("Unable to deliver reply from PING CALL")
+	}
+
+	newPingMsg := PingMessage{
+		Status:      p.Status,
+		ClusterName: p.ClusterName,
+	}
+	b, err := json.Marshal(newPingMsg)
+	if err != nil {
+		return err
+	}
+	newRPCMsg.Payload = b
+	err = SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
+
+	if err != nil {
+		fmt.Println("Unable to respond to ping")
+		return err
+	}
+	return nil
+
+}
 
 func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
-	var newRPCMsg RPCMsg
 	switch msg.RPCType {
 	case CALL: // when peers/nodes send a call RPCType
-		fmt.Println("Call Message")
-		// PRELOADING RPC MESSAGE
-		newRPCMsg = RPCMsg{
-			RPCType:  REPLY,
-			NodeID:   n.NodeID,
-			NodeAddr: NodeAddr{IP: n.Addr.IP, Port: n.Addr.Port},
-		}
+
 		switch msg.Method {
 		case PING:
-			// sender triggers a ping on receiver(this)
-			// receiver sends their NodeID in return
-			// so that the sender can keep track of the receivers
-			newRPCMsg.Method = PING
-			newRPCMsg.StatusCode = SUCCESS
 
-			var incomingPingMsg PingMessage
-			err := json.Unmarshal(msg.Payload, &incomingPingMsg)
-			if err != nil {
-				return err
-			}
-
-			// it is always assumed that people that have the existing file should have an entry for cluster
-			c, ok := n.ClusterTable[incomingPingMsg.ClusterName]
-			// dont need to respond if does not exist anyways
-			if !ok {
-				fmt.Println("Cluster does not exist")
-				newRPCMsg.StatusCode = ERROR
-				newRPCMsg.Comment = fmt.Sprintf("Cluster %s does not exist", incomingPingMsg.ClusterName)
-				err = SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
-				if err != nil {
-					return err
-				}
-				return fmt.Errorf("Unable to deliver reply from PING CALL")
-			}
-
-			newPingMsg := PingMessage{
-				Status:      c.Status,
-				ClusterName: c.ClusterName,
-			}
-			b, err := json.Marshal(newPingMsg)
-			if err != nil {
-				return err
-			}
-			newRPCMsg.Payload = b
-			err = SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
-
-			if err != nil {
-				fmt.Println("Unable to respond to ping")
-				return err
-			}
 		case LEECH:
 		// reply to LEECH request
 		case PROBE:
@@ -241,50 +241,4 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 	default:
 	}
 	return nil
-}
-
-// will be received every reply to LEECH is received
-// Use ctx to cancel when leeching is done
-func MeasurePeerTransfer(ctx *context.Context, n *Node, threadTimer *PeerThread) {
-
-	for {
-		select {
-		case <-(*ctx).Done():
-			// clean up thread ORR ELSEEE!!!
-			return
-		case nodeID := <-(*threadTimer).NodeIDChann:
-			{
-				fmt.Printf("Transfer by: %s\n", nodeID)
-
-				currentTime := time.Now()
-				elapsedms := currentTime.Sub(threadTimer.timeSince)
-				threadTimer.averageBytes = threadTimer.bytesReceived / int(elapsedms)
-
-				fmt.Printf("Bytes transferred per second: %dms\n", threadTimer.averageBytes)
-				threadTimer.bytesReceived = 0
-			}
-
-		}
-	}
-
-}
-
-func CreateCluster(n *Node, cname ClusterName, status PeerStatus) {
-
-	newCluster := Cluster{
-		Status:      status,
-		PeerThreads: make(map[NodeID]PeerThread, 10),
-		Peers:       make([]Peer, 10),
-		ClusterName: cname,
-	}
-
-	_, ok := n.ClusterTable[cname]
-	if !ok {
-		n.ClusterTable[cname] = newCluster
-
-		fmt.Printf("New Cluster created for %s\n", cname)
-		return
-	}
-	fmt.Printf("Cluster %s already exists\n", cname)
-
 }
