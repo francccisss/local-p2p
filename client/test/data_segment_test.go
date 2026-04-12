@@ -53,6 +53,56 @@ func TestDataSegmentation(t *testing.T) {
 	}
 }
 
+func TestFileProbe(t *testing.T) {
+	testPort := 3030
+	testFileData := fileData{hash: "newfile.webp"}
+	UDPConn, err := clientProtocol.InitUDPConn(testPort)
+	if err != nil {
+		fmt.Printf("[TEST ERROR]: %s", err)
+		t.FailNow()
+	}
+
+	client := clientProtocol.NewNode(
+		UDPConn,
+		clientProtocol.NodeAddr{
+			IP:   []byte("localhost"),
+			Port: testPort},
+		"Snicker",
+		"/files/")
+
+	// bootstrap neighbors retrieved from DHT server
+	clientProtocol.CreateCluster(client, testFileData.hash)
+
+	c, ok := (*client.ClusterTable)[testFileData.hash]
+	if !ok {
+		fmt.Printf("[TEST ERROR]: unable to find cluster\n")
+		t.FailNow()
+	}
+	c.ClusterPeers = append(c.ClusterPeers, clientProtocol.ClusterPeer{NodeID: "localhost:5656", Addr: clientProtocol.NodeAddr{IP: []byte("localhost"), Port: 5656}})
+	clientProtocol.Probe(client, c.ClusterName)
+	buff := make([]byte, 4096)
+	for {
+
+		n, _, err := client.UDPconn.ReadFromUDP(buff)
+		if err != nil {
+			fmt.Println(err)
+			t.FailNow()
+		}
+		msg, err := clientProtocol.ReadRPCMessage(buff[:n])
+		if err != nil {
+			fmt.Println(err)
+			t.FailNow()
+		}
+		err = clientProtocol.RecvRPCMessage(client, msg)
+
+		if err != nil {
+			fmt.Println(err)
+			t.FailNow()
+		}
+	}
+
+}
+
 func TestMeasureArrivingBytes(t *testing.T) {
 	port := 3030
 	UDPConn, err := clientProtocol.InitUDPConn(port)
@@ -62,6 +112,7 @@ func TestMeasureArrivingBytes(t *testing.T) {
 	}
 
 	clientNode := clientProtocol.NewNode(UDPConn, clientProtocol.NodeAddr{IP: []byte("localhost"), Port: port}, "LeechingNode", "/files/")
+
 	buff := make([]byte, 4096)
 
 	for {

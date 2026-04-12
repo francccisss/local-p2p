@@ -177,6 +177,30 @@ func Ping(n *Node, cname ClusterName) error {
 	return nil
 }
 
+func Probe(n *Node, cname ClusterName) error {
+	c, ok := (*n.ClusterTable)[cname]
+	if !ok {
+		return fmt.Errorf("Cluster does not exist")
+	}
+	newMsg := RPCMsg{
+		RPCType:  CALL,
+		Method:   PROBE,
+		NodeID:   n.NodeID,
+		NodeAddr: n.Addr,
+		Payload:  []byte(cname),
+	}
+
+	for _, cp := range c.ClusterPeers {
+		err := SendMsg(n.UDPconn, newMsg, cp.Addr)
+		if err != nil {
+			continue
+		}
+	}
+
+	return nil
+
+}
+
 func Leech(n *Node, cname ClusterName) error {
 
 	c, ok := (*n.ClusterTable)[cname]
