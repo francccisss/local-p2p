@@ -104,16 +104,17 @@ func (c *Cluster) NewPeer() *Peer {
 
 // TODO add checksum parameter passed in by caller
 // each file corresponds to a cluster name
-func ProbeFile(n *Node, cname ClusterName) (StatusCode, error) {
 
-	entry, path, err := Checkfile(string(cname), n.FILE_LOCATION)
+func ProbeFile(FILE_LOCATION string, cname ClusterName) (StatusCode, FileMetaData, error) {
+
+	entry, path, err := Checkfile(string(cname), FILE_LOCATION)
 	if err != nil {
-		return ERROR, err
+		return ERROR, FileMetaData{}, err
 	}
 
 	file, err := entry.Info()
 	if err != nil {
-		return ERROR, err
+		return ERROR, FileMetaData{}, err
 	}
 	// obviously need to use the absolute route to the file
 	// reuse wd prefix? hmmm
@@ -121,14 +122,13 @@ func ProbeFile(n *Node, cname ClusterName) (StatusCode, error) {
 	fileBuffer, err := os.ReadFile(path + file.Name())
 
 	if err != nil {
-		return ERROR, err
+		return ERROR, FileMetaData{}, err
 	}
 
 	fmt.Printf("file length: %d\n", len(fileBuffer))
 
 	// check data integrity of file using checksum
-
-	return SUCCESS, nil
+	return SUCCESS, FileMetaData{Name: file.Name(), Hash: string(cname), Size: uint64(file.Size())}, nil
 }
 
 // -----------------------------------------
@@ -187,6 +187,7 @@ func Leech(n *Node, cname ClusterName) error {
 	c.Peer.Status = LEECHING
 
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*3)
+
 	for _, p := range c.ClusterPeers {
 		go MeasurePeerTransfer(&ctx, n, c.ClusterPeerThreads[p.NodeID])
 	}

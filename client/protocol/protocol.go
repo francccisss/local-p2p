@@ -103,16 +103,17 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 	switch msg.RPCType {
 	case CALL: // when peers/nodes send a call RPCType
 
+		var newRPCMsg RPCMsg
+		fmt.Println("Call Message")
+		// PRELOADING RPC MESSAGE
+		newRPCMsg = RPCMsg{
+			RPCType:  REPLY,
+			NodeID:   n.NodeID,
+			NodeAddr: NodeAddr{IP: n.Addr.IP, Port: n.Addr.Port},
+			Comment:  "",
+		}
 		switch msg.Method {
 		case PING:
-			var newRPCMsg RPCMsg
-			fmt.Println("Call Message")
-			// PRELOADING RPC MESSAGE
-			newRPCMsg = RPCMsg{
-				RPCType:  REPLY,
-				NodeID:   n.NodeID,
-				NodeAddr: NodeAddr{IP: n.Addr.IP, Port: n.Addr.Port},
-			}
 			// sender triggers a ping on receiver(this)
 			// receiver sends their NodeID in return
 			// so that the sender can keep track of the receivers
@@ -170,7 +171,31 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 			fmt.Printf("Reply sent\n")
 		case LEECH:
+
 		case PROBE:
+			newRPCMsg.Method = PROBE
+			cname := string(msg.Payload)
+			status, meta, err := ProbeFile(n.FILE_LOCATION, ClusterName(cname))
+
+			if err != nil {
+				fmt.Printf("[PROBE REQUEST]: %s\n", err)
+				newRPCMsg.Comment = err.Error()
+				newRPCMsg.StatusCode = status
+				err := SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
+				if err != nil {
+					return fmt.Errorf("Unable to send message")
+				}
+			}
+			b, err := json.Marshal(meta)
+
+			if err != nil {
+				fmt.Println("Unable to Marshal FileMetaData")
+				return err
+			}
+
+			newRPCMsg.Payload = b
+			newRPCMsg.StatusCode = SUCCESS
+			err = SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
 		}
 	case REPLY: // when peers/nodes send a call RPCType
 
@@ -231,6 +256,17 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			})
 
 			fmt.Printf("Peer thread created in cluster '%s'\n", convCname)
+		case PROBE:
+			var fileMetaData FileMetaData
+			err := json.Unmarshal(msg.Payload, &fileMetaData)
+			if err != nil {
+				fmt.Println("Unable to Unmarshal FileMetaData")
+				return err
+			}
+
+			fmt.Println("FileMetaData Received")
+			fmt.Printf("File Meta Data: %+v\n", fileMetaData)
+
 		}
 		fmt.Println("Reply from Call Message")
 	default:

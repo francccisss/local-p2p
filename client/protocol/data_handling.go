@@ -7,6 +7,12 @@ import (
 	"os"
 )
 
+type FileMetaData struct {
+	Name string
+	Hash string
+	Size uint64
+}
+
 // Payload of RPCMessage for LEECH call method
 type DataSegment struct {
 	TotalSegments   int
