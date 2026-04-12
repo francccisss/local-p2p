@@ -26,7 +26,22 @@ type Cluster struct {
 	ClusterPeerThreads map[NodeID]*ClusterPeerThread // keep track of peers
 	ClusterName        ClusterName
 	ClusterPeers       []ClusterPeer
-	Peer               Peer
+	Peer               Peer // created when a cluster is created
+}
+
+type Peer struct {
+	Status      PeerStatus
+	ClusterName ClusterName
+}
+
+func (cl *Cluster) NewClusterPeer(addr NodeAddr, nodeID NodeID) *ClusterPeer {
+	newClusterPeer := &ClusterPeer{
+		Addr:   addr,
+		NodeID: nodeID,
+	}
+
+	cl.ClusterPeers = append(cl.ClusterPeers, *newClusterPeer)
+	return newClusterPeer
 }
 
 type ClusterTable map[ClusterName]*Cluster
@@ -36,14 +51,13 @@ func CreateCluster(n *Node, cname ClusterName) {
 	newCluster := Cluster{
 		ClusterPeerThreads: make(map[NodeID]*ClusterPeerThread),
 		ClusterPeers:       []ClusterPeer{},
-		Peer:               Peer{Status: IDLE},
+		Peer:               Peer{Status: IDLE, ClusterName: cname},
 		ClusterName:        cname,
 	}
 
 	_, ok := (*n.ClusterTable)[cname]
 	if !ok {
 		(*n.ClusterTable)[cname] = &newCluster
-
 		fmt.Printf("New Cluster created for '%s'\n", cname)
 		return
 	}
@@ -51,17 +65,20 @@ func CreateCluster(n *Node, cname ClusterName) {
 
 }
 
-func NewPeerThread(cname ClusterName) *ClusterPeerThread {
-	return &ClusterPeerThread{
-		ClusterName: cname,
+func (cl *Cluster) NewClusterPeerThread(nodeID NodeID) *ClusterPeerThread {
+
+	newClusterPeerThread := &ClusterPeerThread{
+		ClusterName: cl.ClusterName,
 		NodeIDChann: make(chan NodeID),
 		timeSince:   time.Now(),
 	}
+	cl.ClusterPeerThreads[nodeID] = newClusterPeerThread
+	return newClusterPeerThread
 }
 
 // will be received every reply to LEECH is received
 // Use ctx to cancel when leeching is done
-func MeasurePeerTransfer(ctx *context.Context, n *Node, clPeerThread *ClusterPeerThread) {
+func (cl *Cluster) MeasurePeerTransfer(ctx *context.Context, n *Node, clPeerThread *ClusterPeerThread) {
 
 	for {
 		select {
@@ -84,18 +101,6 @@ func MeasurePeerTransfer(ctx *context.Context, n *Node, clPeerThread *ClusterPee
 		}
 	}
 
-}
-
-type Peer struct {
-	Status      PeerStatus
-	ClusterName ClusterName
-}
-
-func (c *Cluster) NewPeer() *Peer {
-	return &Peer{
-		Status:      IDLE,
-		ClusterName: c.ClusterName,
-	}
 }
 
 // -----------------------------------------
@@ -213,7 +218,7 @@ func Leech(n *Node, cname ClusterName) error {
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*3)
 
 	for _, p := range c.ClusterPeers {
-		go MeasurePeerTransfer(&ctx, n, c.ClusterPeerThreads[p.NodeID])
+		go c.MeasurePeerTransfer(&ctx, n, c.ClusterPeerThreads[p.NodeID])
 	}
 
 	return nil

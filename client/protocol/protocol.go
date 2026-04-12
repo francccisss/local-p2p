@@ -107,10 +107,11 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 		fmt.Println("Call Message")
 		// PRELOADING RPC MESSAGE
 		newRPCMsg = RPCMsg{
-			RPCType:  REPLY,
-			NodeID:   n.NodeID,
-			NodeAddr: NodeAddr{IP: n.Addr.IP, Port: n.Addr.Port},
-			Comment:  "",
+			RPCType:    REPLY,
+			NodeID:     n.NodeID,
+			NodeAddr:   NodeAddr{IP: n.Addr.IP, Port: n.Addr.Port},
+			Comment:    "",
+			StatusCode: 0,
 		}
 		switch msg.Method {
 		case PING:
@@ -128,7 +129,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 			fmt.Printf("Checking cluster table for '%s' cluster\n", incomingPingMsg.ClusterName)
 			// it is always assumed that people that have the existing file should have an entry for cluster
-			c, ok := (*n.ClusterTable)[incomingPingMsg.ClusterName]
+			cl, ok := (*n.ClusterTable)[incomingPingMsg.ClusterName]
 			// dont need to respond if does not exist anyways
 			if !ok {
 				fmt.Println("Cluster does not exist")
@@ -145,17 +146,16 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 			fmt.Printf("Adding '%s' to the cluster\n", msg.NodeID)
 
-			c.ClusterPeers = append(c.ClusterPeers, ClusterPeer{msg.NodeAddr, msg.NodeID})
-			(*n.ClusterTable)[incomingPingMsg.ClusterName] = c
+			cl.NewClusterPeer(msg.NodeAddr, msg.NodeID)
 
-			for _, cp := range c.ClusterPeers {
+			for _, cp := range cl.ClusterPeers {
 				fmt.Printf("Peers in cluster: '%s'\n", cp.NodeID)
 			}
 
 			fmt.Printf("Sending reply back to '%s'\n", msg.NodeID)
 			newPingMsg := PingMessage{
-				Status:      c.Peer.Status,
-				ClusterName: c.ClusterName,
+				Status:      cl.Peer.Status,
+				ClusterName: cl.ClusterName,
 			}
 			b, err := json.Marshal(newPingMsg)
 			if err != nil {
@@ -233,6 +233,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			if msg.StatusCode == ERROR {
 				return fmt.Errorf("%s", msg.Comment)
 			}
+			fmt.Printf("Ping received from %s\n", msg.NodeID)
 			var pingMsg PingMessage
 			err := json.Unmarshal(msg.Payload, &pingMsg)
 			if err != nil {
@@ -243,18 +244,15 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 			// State of new node is set to IDLE on default
 			convCname := pingMsg.ClusterName
-			c, ok := (*n.ClusterTable)[convCname]
+			cl, ok := (*n.ClusterTable)[convCname]
 			if !ok {
 				CreateCluster(n, convCname)
-				c = (*n.ClusterTable)[convCname]
+				cl = (*n.ClusterTable)[convCname]
 			}
 			// update map
-			c.ClusterPeerThreads[msg.NodeID] = NewPeerThread(convCname)
-			c.ClusterPeers = append(c.ClusterPeers, ClusterPeer{
-				Addr:   msg.NodeAddr,
-				NodeID: msg.NodeID,
-			})
 
+			cl.NewClusterPeerThread(msg.NodeID)
+			cl.NewClusterPeer(msg.NodeAddr, msg.NodeID)
 			fmt.Printf("Peer thread created in cluster '%s'\n", convCname)
 		case PROBE:
 			var fileMetaData FileMetaData
