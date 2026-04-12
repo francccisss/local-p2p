@@ -26,10 +26,6 @@ func VerifyChecksum() {
 
 }
 
-func minMax() {
-
-}
-
 // multiple peers would need to coordinate how many segments
 func DataSegmentation(buf []byte, numOfSegments int) ([]DataSegment, error) {
 	fmt.Printf("Number of segments to create: %d\n", numOfSegments)

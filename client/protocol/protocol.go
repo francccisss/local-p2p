@@ -1,10 +1,14 @@
 package protocol
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
+	"sync"
+	"time"
 )
 
 type Method int
@@ -71,32 +75,42 @@ func ReadRPCMessage(buffer []byte) (RPCMsg, error) {
 	return msg, nil
 }
 
-// when sending a message from a CALL rpc type, if the response takes too long, we drop and forget it.
-// and consider that peer as offline
-func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
-	b, err := json.Marshal(message)
+// -----------------------------------------
+// METHODS FOR HANDLING A `CALL` RPC MESSAGE
+// -----------------------------------------
+
+// TODO add checksum parameter passed in by caller
+// each file corresponds to a cluster name
+
+func ProbeFile(FILE_LOCATION string, cname ClusterName) (StatusCode, FileMetaData, error) {
+
+	entry, path, err := Checkfile(string(cname), FILE_LOCATION)
 	if err != nil {
-		return err
+		return ERROR, FileMetaData{}, err
 	}
 
-	ip := string(peerAddr.IP)
-	port := strconv.Itoa(peerAddr.Port)
-	raddr, err := net.ResolveUDPAddr("udp", ip+":"+port)
+	file, err := entry.Info()
+	if err != nil {
+		return ERROR, FileMetaData{}, err
+	}
+	// obviously need to use the absolute route to the file
+	// reuse wd prefix? hmmm
+	fmt.Printf("Absolute Path: %s\n", path)
+	fileBuffer, err := os.ReadFile(path + file.Name())
 
 	if err != nil {
-		return err
+		return ERROR, FileMetaData{}, err
 	}
 
-	fmt.Printf("Sending to: %s\n", ip+":"+port)
-	n, err := conn.WriteTo(b, raddr)
-	if err != nil {
-		return err
-	}
+	fmt.Printf("file length: %d\n", len(fileBuffer))
 
-	fmt.Printf("Marshalled: %d\nSent: %d\n", len(b), n)
-
-	return nil
+	// check data integrity of file using checksum
+	return SUCCESS, FileMetaData{Name: file.Name(), Hash: string(cname), Size: uint64(file.Size())}, nil
 }
+
+// -----------------------------------------
+// METHODS FOR CREATING A `CALL` RPC MESSAGE
+// -----------------------------------------
 
 func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
@@ -171,6 +185,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 			fmt.Printf("Reply sent\n")
 		case LEECH:
+		//  What TODO
 
 		case PROBE:
 			newRPCMsg.Method = PROBE
@@ -221,7 +236,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			if !ok {
 				return fmt.Errorf("NodeID Key does not exist for thread")
 			}
-			t.bytesReceived += len(msg.Payload)
+			t.BytesReceived += len(msg.Payload)
 			t.NodeIDChann <- msg.NodeID
 
 		case PING:
@@ -262,12 +277,143 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 				return err
 			}
 
-			fmt.Println("FileMetaData Received")
+			fmt.Println("File Meta Data Received")
 			fmt.Printf("File Meta Data: %+v\n", fileMetaData)
 
 		}
 		fmt.Println("Reply from Call Message")
 	default:
 	}
+	return nil
+}
+
+// n asks what other peers if they have this p.cname
+// in their table, if so, they add this node and set the status to idle.
+// This function can be used within a cluster, if passed in the peers of that cluster
+// or the neighboring nodes for creating a cluster table for p.cname in the sender process
+func Ping(n *Node, cname ClusterName) error {
+
+	var msg RPCMsg = RPCMsg{
+		RPCType:    CALL,
+		NodeAddr:   n.Addr,
+		Method:     PING,
+		StatusCode: SUCCESS,
+		NodeID:     n.NodeID,
+	}
+
+	// for bootstrapped nodes
+	c, ok := (*n.ClusterTable)[cname]
+	if !ok {
+		return fmt.Errorf("ERROR: Cluster not found")
+	}
+	fmt.Println(len(c.ClusterPeers))
+	for _, p := range c.ClusterPeers {
+		fmt.Printf("\nPEER: %+v\n", p)
+		newPingMsg := PingMessage{ClusterName: cname, Status: IDLE}
+
+		b, err := json.Marshal(newPingMsg)
+		if err != nil {
+			return err
+		}
+
+		msg.Payload = b
+		err = SendMsg(n.UDPconn, msg, p.Addr)
+		if err != nil {
+			fmt.Printf("%s", err)
+			continue
+		}
+	}
+
+	fmt.Println("\nPinging peers in cluster.")
+	fmt.Println("Ping Sent")
+	return nil
+}
+
+func Probe(n *Node, cname ClusterName) error {
+	c, ok := (*n.ClusterTable)[cname]
+	if !ok {
+		return fmt.Errorf("Cluster does not exist")
+	}
+	newMsg := RPCMsg{
+		RPCType:  CALL,
+		Method:   PROBE,
+		NodeID:   n.NodeID,
+		NodeAddr: n.Addr,
+		Payload:  []byte(cname),
+	}
+
+	for _, cp := range c.ClusterPeers {
+		err := SendMsg(n.UDPconn, newMsg, cp.Addr)
+		if err != nil {
+			continue
+		}
+	}
+
+	return nil
+
+}
+
+func Leech(n *Node, cname ClusterName) error {
+
+	c, ok := (*n.ClusterTable)[cname]
+	if !ok {
+		return fmt.Errorf("Cluster does not exist")
+	}
+
+	c.Peer.Status = LEECHING
+
+	var wg sync.WaitGroup
+
+	// TODO: Figure out when to cancel and how
+	ctx, _ := context.WithTimeout(context.Background(), time.Second*3)
+	fmt.Println("[LEECH REQUEST]: Preparing Cluster Peer Threads for Byte Measurement")
+
+	for _, p := range c.ClusterPeers {
+		wg.Go(func() {
+			c.SpawnPeerThreads(&ctx, c.ClusterPeerThreads[p.NodeID])
+		})
+	}
+	fmt.Printf("[LEECH REQUEST]: Waiting for Cluster Peer Threads to deploy...")
+	wg.Wait()
+
+	fmt.Printf("[LEECH REQUEST]: Done!")
+	fmt.Printf("[LEECH REQUEST]: Now Sending request to peers in cluster: %s\n", cname)
+	newMsg := RPCMsg{}
+	for _, p := range c.ClusterPeers {
+		err := SendMsg(n.UDPconn, newMsg, p.Addr)
+		if err != nil {
+			continue
+		}
+	}
+
+	fmt.Printf("[LEECH REQUEST]: Request sent to peers in cluster: %s\n", cname)
+
+	return nil
+}
+
+// when sending a message from a CALL rpc type, if the response takes too long, we drop and forget it.
+// and consider that peer as offline
+func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
+	b, err := json.Marshal(message)
+	if err != nil {
+		return err
+	}
+
+	ip := string(peerAddr.IP)
+	port := strconv.Itoa(peerAddr.Port)
+	raddr, err := net.ResolveUDPAddr("udp", ip+":"+port)
+
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Sending to: %s\n", ip+":"+port)
+	n, err := conn.WriteTo(b, raddr)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Marshalled: %d\nSent: %d\n", len(b), n)
+
 	return nil
 }

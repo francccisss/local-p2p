@@ -2,21 +2,23 @@ package test
 
 import (
 	"client/protocol"
-	clientProtocol "client/protocol"
+	"context"
 	"fmt"
 	"io/fs"
+	"math/rand"
 	"os"
-	_ "os"
 	"slices"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestDataSegmentation(t *testing.T) {
 
-	n := clientProtocol.Node{
+	n := protocol.Node{
 		FILE_LOCATION: "/files/",
 	}
-	en, path, err := clientProtocol.Checkfile("newfile.webp", n.FILE_LOCATION)
+	en, path, err := protocol.Checkfile("newfile.webp", n.FILE_LOCATION)
 	if err != nil {
 		fmt.Println(err)
 		t.FailNow()
@@ -27,7 +29,7 @@ func TestDataSegmentation(t *testing.T) {
 		t.FailNow()
 	}
 
-	ds, err := clientProtocol.DataSegmentation(b, 10)
+	ds, err := protocol.DataSegmentation(b, 10)
 	if err != nil {
 		fmt.Println(err)
 		t.FailNow()
@@ -56,30 +58,30 @@ func TestDataSegmentation(t *testing.T) {
 func TestFileProbe(t *testing.T) {
 	testPort := 3030
 	testFileData := fileData{hash: "newfile.webp"}
-	UDPConn, err := clientProtocol.InitUDPConn(testPort)
+	UDPConn, err := protocol.InitUDPConn(testPort)
 	if err != nil {
 		fmt.Printf("[TEST ERROR]: %s", err)
 		t.FailNow()
 	}
 
-	client := clientProtocol.NewNode(
+	client := protocol.NewNode(
 		UDPConn,
-		clientProtocol.NodeAddr{
+		protocol.NodeAddr{
 			IP:   []byte("localhost"),
 			Port: testPort},
 		"Snicker",
 		"/files/")
 
 	// bootstrap neighbors retrieved from DHT server
-	clientProtocol.CreateCluster(client, testFileData.hash)
+	protocol.CreateCluster(client, testFileData.hash)
 
 	c, ok := (*client.ClusterTable)[testFileData.hash]
 	if !ok {
 		fmt.Printf("[TEST ERROR]: unable to find cluster\n")
 		t.FailNow()
 	}
-	c.ClusterPeers = append(c.ClusterPeers, clientProtocol.ClusterPeer{NodeID: "localhost:5656", Addr: clientProtocol.NodeAddr{IP: []byte("localhost"), Port: 5656}})
-	clientProtocol.Probe(client, c.ClusterName)
+	c.ClusterPeers = append(c.ClusterPeers, protocol.ClusterPeer{NodeID: "localhost:5656", Addr: protocol.NodeAddr{IP: []byte("localhost"), Port: 5656}})
+	protocol.Probe(client, c.ClusterName)
 	buff := make([]byte, 4096)
 	for {
 
@@ -88,12 +90,12 @@ func TestFileProbe(t *testing.T) {
 			fmt.Println(err)
 			t.FailNow()
 		}
-		msg, err := clientProtocol.ReadRPCMessage(buff[:n])
+		msg, err := protocol.ReadRPCMessage(buff[:n])
 		if err != nil {
 			fmt.Println(err)
 			t.FailNow()
 		}
-		err = clientProtocol.RecvRPCMessage(client, msg)
+		err = protocol.RecvRPCMessage(client, msg)
 
 		if err != nil {
 			fmt.Println(err)
@@ -103,37 +105,51 @@ func TestFileProbe(t *testing.T) {
 
 }
 
-func TestMeasureArrivingBytes(t *testing.T) {
-	port := 3030
-	UDPConn, err := clientProtocol.InitUDPConn(port)
-	if err != nil {
-		fmt.Println(err)
-		t.FailNow()
+func TestClusterThreads(t *testing.T) {
+	var cname protocol.ClusterName = "newfile.webp"
+	initClt := make(protocol.ClusterTable)
+	node := protocol.Node{
+		ClusterTable: &initClt,
+	}
+	protocol.CreateCluster(&node, cname)
+	clt, _ := (*node.ClusterTable)[cname]
+
+	peerArr := []protocol.ClusterPeer{{NodeID: "peer1"}, {NodeID: "peer2"}, {NodeID: "peer3"}}
+
+	for _, p := range peerArr {
+		clt.NewClusterPeerThread(p.NodeID)
+		clt.NewClusterPeer(protocol.NodeAddr{}, p.NodeID)
 	}
 
-	clientNode := clientProtocol.NewNode(UDPConn, clientProtocol.NodeAddr{IP: []byte("localhost"), Port: port}, "LeechingNode", "/files/")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var wg sync.WaitGroup
+	for _, p := range peerArr {
+		cpt := clt.ClusterPeerThreads[p.NodeID]
+		func() {
+			go clt.SpawnPeerThreads(&ctx, cpt)
+		}()
+	}
+	fmt.Println("[TEST]: Spawning Peer Threads")
+	wg.Wait()
+	fmt.Println("[TEST]: Sending request to peers")
 
-	buff := make([]byte, 4096)
+	// if timed out wont return test
+	for _, p := range peerArr {
+		go func() {
 
-	for {
-		n, _, err := UDPConn.ReadFromUDP(buff)
-		if err != nil {
-			fmt.Println(err)
-			t.FailNow()
-		}
-		msg, err := protocol.ReadRPCMessage(buff[:n])
-
-		if err != nil {
-			fmt.Println(err)
-			t.FailNow()
-		}
-
-		err = protocol.RecvRPCMessage(clientNode, msg)
-		if err != nil {
-			fmt.Println(err)
-			t.FailNow()
-		}
-
+			cpt := clt.ClusterPeerThreads[p.NodeID]
+			cpt.TimeSince = time.Now()
+			cpt.BytesReceived = 450
+			time.Sleep(time.Second * time.Duration(rand.Intn(10)))
+			cpt.NodeIDChann <- p.NodeID
+		}()
 	}
 
+	fmt.Println("[TEST]: Waiting for peers to finish")
+	time.Sleep(time.Second * 20)
+	for _, p := range peerArr {
+		cpt := clt.ClusterPeerThreads[p.NodeID]
+		fmt.Printf("[TEST]: %s | bytes received-%d | avg bytes-%d\n", p.NodeID, cpt.BytesReceived, cpt.AverageBytes)
+	}
 }
