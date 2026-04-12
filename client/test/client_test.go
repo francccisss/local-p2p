@@ -31,13 +31,13 @@ func TestClientPing(t *testing.T) {
 		pro.NodeAddr{
 			IP:   []byte("localhost"),
 			Port: testPort},
-		"Pinger",
+		"Snicker",
 		"/files/")
 
 	// bootstrap neighbors retrieved from DHT server
 	pro.CreateCluster(client, testFileData.hash)
 
-	c, ok := client.ClusterTable[testFileData.hash]
+	c, ok := (*client.ClusterTable)[testFileData.hash]
 	if !ok {
 		fmt.Printf("[TEST ERROR]: unable to find cluster\n")
 		t.FailNow()
@@ -45,7 +45,7 @@ func TestClientPing(t *testing.T) {
 	for _, n := range NeighborBootstrap {
 		c.ClusterPeers = append(c.ClusterPeers, n)
 	}
-	client.ClusterTable[testFileData.hash] = c
+	(*client.ClusterTable)[testFileData.hash] = c
 
 	err = pro.Ping(client, testFileData.hash)
 	if err != nil {
@@ -69,7 +69,5 @@ func TestClientPing(t *testing.T) {
 			fmt.Printf("[TEST ERROR]: %s", err)
 			t.FailNow()
 		}
-
 	}
-
 }

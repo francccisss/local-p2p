@@ -127,7 +127,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 			fmt.Printf("Checking cluster table for '%s' cluster\n", incomingPingMsg.ClusterName)
 			// it is always assumed that people that have the existing file should have an entry for cluster
-			c, ok := n.ClusterTable[incomingPingMsg.ClusterName]
+			c, ok := (*n.ClusterTable)[incomingPingMsg.ClusterName]
 			// dont need to respond if does not exist anyways
 			if !ok {
 				fmt.Println("Cluster does not exist")
@@ -145,13 +145,10 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			fmt.Printf("Adding '%s' to the cluster\n", msg.NodeID)
 
 			c.ClusterPeers = append(c.ClusterPeers, ClusterPeer{msg.NodeAddr, msg.NodeID})
-			n.ClusterTable[incomingPingMsg.ClusterName] = c
+			(*n.ClusterTable)[incomingPingMsg.ClusterName] = c
 
 			for _, cp := range c.ClusterPeers {
-				if cp.NodeID != msg.NodeID {
-					continue
-				}
-				fmt.Printf("Added '%s' to the cluster\n", cp.NodeID)
+				fmt.Printf("Peers in cluster: '%s'\n", cp.NodeID)
 			}
 
 			fmt.Printf("Sending reply back to '%s'\n", msg.NodeID)
@@ -190,7 +187,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 		case LEECH:
 
 			// match the clustername and then the NodeID that sent the request
-			c, ok := n.ClusterTable[seg.ClusterName]
+			c, ok := (*n.ClusterTable)[seg.ClusterName]
 			if !ok {
 				return fmt.Errorf("Cluster does not exist")
 			}
@@ -221,10 +218,10 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 			// State of new node is set to IDLE on default
 			convCname := pingMsg.ClusterName
-			c, ok := n.ClusterTable[convCname]
+			c, ok := (*n.ClusterTable)[convCname]
 			if !ok {
 				CreateCluster(n, convCname)
-				c = n.ClusterTable[convCname]
+				c = (*n.ClusterTable)[convCname]
 			}
 			// update map
 			c.ClusterPeerThreads[msg.NodeID] = NewPeerThread(convCname)
@@ -232,8 +229,6 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 				Addr:   msg.NodeAddr,
 				NodeID: msg.NodeID,
 			})
-
-			n.ClusterTable[convCname] = c
 
 			fmt.Printf("Peer thread created in cluster '%s'\n", convCname)
 		}

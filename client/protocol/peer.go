@@ -23,26 +23,26 @@ type ClusterPeer struct {
 	NodeID NodeID
 }
 type Cluster struct {
-	ClusterPeerThreads map[NodeID]ClusterPeerThread // keep track of peers
+	ClusterPeerThreads map[NodeID]*ClusterPeerThread // keep track of peers
 	ClusterName        ClusterName
 	ClusterPeers       []ClusterPeer
 	Peer               Peer
 }
 
-type ClusterTable map[ClusterName]Cluster
+type ClusterTable map[ClusterName]*Cluster
 
 func CreateCluster(n *Node, cname ClusterName) {
 
 	newCluster := Cluster{
-		ClusterPeerThreads: make(map[NodeID]ClusterPeerThread),
+		ClusterPeerThreads: make(map[NodeID]*ClusterPeerThread),
 		ClusterPeers:       []ClusterPeer{},
 		Peer:               Peer{Status: IDLE},
 		ClusterName:        cname,
 	}
 
-	_, ok := n.ClusterTable[cname]
+	_, ok := (*n.ClusterTable)[cname]
 	if !ok {
-		n.ClusterTable[cname] = newCluster
+		(*n.ClusterTable)[cname] = &newCluster
 
 		fmt.Printf("New Cluster created for '%s'\n", cname)
 		return
@@ -51,8 +51,8 @@ func CreateCluster(n *Node, cname ClusterName) {
 
 }
 
-func NewPeerThread(cname ClusterName) ClusterPeerThread {
-	return ClusterPeerThread{
+func NewPeerThread(cname ClusterName) *ClusterPeerThread {
+	return &ClusterPeerThread{
 		ClusterName: cname,
 		NodeIDChann: make(chan NodeID),
 		timeSince:   time.Now(),
@@ -66,6 +66,7 @@ func MeasurePeerTransfer(ctx *context.Context, n *Node, clPeerThread *ClusterPee
 	for {
 		select {
 		case <-(*ctx).Done():
+			fmt.Println("TIMED OUT")
 			// clean up thread ORR ELSEEE!!!
 			return
 		case nodeID := <-(*clPeerThread).NodeIDChann:
@@ -149,7 +150,7 @@ func Ping(n *Node, cname ClusterName) error {
 	}
 
 	// for bootstrapped nodes
-	c, ok := n.ClusterTable[cname]
+	c, ok := (*n.ClusterTable)[cname]
 	if !ok {
 		return fmt.Errorf("ERROR: Cluster not found")
 	}
@@ -178,12 +179,17 @@ func Ping(n *Node, cname ClusterName) error {
 
 func Leech(n *Node, cname ClusterName) error {
 
-	c, ok := n.ClusterTable[cname]
+	c, ok := (*n.ClusterTable)[cname]
 	if !ok {
 		return fmt.Errorf("Cluster does not exist")
 	}
 
 	c.Peer.Status = LEECHING
-	n.ClusterTable[cname] = c
+
+	ctx, _ := context.WithTimeout(context.Background(), time.Second*3)
+	for _, p := range c.ClusterPeers {
+		go MeasurePeerTransfer(&ctx, n, c.ClusterPeerThreads[p.NodeID])
+	}
+
 	return nil
 }
