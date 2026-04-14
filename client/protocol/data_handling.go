@@ -22,6 +22,14 @@ type DataSegment struct {
 	DataChunk       []byte
 }
 
+func ExtractSegments(ds []DataSegment, segPos int, segNum int) []DataSegment {
+	total := ds[0].TotalSegments
+	// handling out of bounds to return only what is left from segPos
+	nth := min(((segNum + segPos) - total), total-segPos)
+	retds := ds[segPos : segPos+nth]
+	return retds
+}
+
 func VerifyChecksum() {
 
 }
@@ -38,8 +46,7 @@ func DataSegmentation(buf []byte, numOfSegments int) ([]DataSegment, error) {
 	lenOfSegments := int(dataLen/numOfSegments) + 1 // + 1 for the remaining bytes when division has remainder
 
 	fmt.Printf("Length of a Segment: %d\n", lenOfSegments)
-	for i := 0; i < numOfSegments; i++ {
-
+	for i := range numOfSegments {
 		// segmentIndex increases relative to i
 		// if lenOfSegments = 5
 		// i = 0 segmentIndex moves 0
@@ -63,7 +70,7 @@ func DataSegmentation(buf []byte, numOfSegments int) ([]DataSegment, error) {
 		segmentIndex := i * lenOfSegments
 		diff := min(lenOfSegments, int(math.Abs(float64((segmentIndex)-len(buf))))) // i hate this conversion
 		ds := DataSegment{
-			SegmentNum: max(0, i),
+			SegmentNum: 0,
 			DataChunk:  buf[segmentIndex : segmentIndex+diff],
 		}
 		tmp = append(tmp, ds)

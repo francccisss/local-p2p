@@ -17,7 +17,6 @@ const (
 	PING Method = iota
 	LEECH
 	PROBE
-	SENDFILE
 )
 
 // Node can implement client connection interface
@@ -185,8 +184,17 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 			fmt.Printf("Reply sent\n")
 		case LEECH:
-		//  What TODO
+			// a call to leech received a single DataSegment
+			// a reply to leech receives an array of DataSegments
+			var dsi DataSegment
+			err := json.Unmarshal(msg.Payload, &dsi)
+			if err != nil {
+				fmt.Println("Unable to unmarshal data segment")
+				return err
+			}
 
+			// TODO: Read large files incrementally by position
+			// feed segments -> ExtractSegments()
 		case PROBE:
 			newRPCMsg.Method = PROBE
 			cname := string(msg.Payload)
@@ -293,7 +301,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 // or the neighboring nodes for creating a cluster table for p.cname in the sender process
 func Ping(n *Node, cname ClusterName) error {
 
-	var msg RPCMsg = RPCMsg{
+	var newMsg RPCMsg = RPCMsg{
 		RPCType:    CALL,
 		NodeAddr:   n.Addr,
 		Method:     PING,
@@ -316,8 +324,8 @@ func Ping(n *Node, cname ClusterName) error {
 			return err
 		}
 
-		msg.Payload = b
-		err = SendMsg(n.UDPconn, msg, p.Addr)
+		newMsg.Payload = b
+		err = SendMsg(n.UDPconn, newMsg, p.Addr)
 		if err != nil {
 			fmt.Printf("%s", err)
 			continue
@@ -353,7 +361,7 @@ func Probe(n *Node, cname ClusterName) error {
 
 }
 
-func Leech(n *Node, cname ClusterName) error {
+func Leech(n *Node, cname ClusterName, spawnThreads bool, ds DataSegment) error {
 
 	c, ok := (*n.ClusterTable)[cname]
 	if !ok {
@@ -362,23 +370,33 @@ func Leech(n *Node, cname ClusterName) error {
 
 	c.Peer.Status = LEECHING
 
-	var wg sync.WaitGroup
+	if spawnThreads {
+		var wg sync.WaitGroup
+		ctx, _ := context.WithTimeout(context.Background(), time.Second*3)
+		fmt.Println("[LEECH REQUEST]: Preparing Cluster Peer Threads for Byte Measurement")
 
-	// TODO: Figure out when to cancel and how
-	ctx, _ := context.WithTimeout(context.Background(), time.Second*3)
-	fmt.Println("[LEECH REQUEST]: Preparing Cluster Peer Threads for Byte Measurement")
-
-	for _, p := range c.ClusterPeers {
-		wg.Go(func() {
-			c.SpawnPeerThreads(&ctx, c.ClusterPeerThreads[p.NodeID])
-		})
+		for _, p := range c.ClusterPeers {
+			wg.Go(func() {
+				c.SpawnPeerThreads(&ctx, c.ClusterPeerThreads[p.NodeID])
+			})
+		}
+		fmt.Printf("[LEECH REQUEST]: Waiting for Cluster Peer Threads to deploy...")
+		wg.Wait()
+		fmt.Printf("[LEECH REQUEST]: Done!")
 	}
-	fmt.Printf("[LEECH REQUEST]: Waiting for Cluster Peer Threads to deploy...")
-	wg.Wait()
-
-	fmt.Printf("[LEECH REQUEST]: Done!")
-	fmt.Printf("[LEECH REQUEST]: Now Sending request to peers in cluster: %s\n", cname)
-	newMsg := RPCMsg{}
+	fmt.Printf("[LEECH REQUEST]: Sending request to peers in cluster: %s\n", cname)
+	mds, err := json.Marshal(ds)
+	if err != nil {
+		return err
+	}
+	newMsg := RPCMsg{
+		RPCType:  CALL,
+		NodeAddr: n.Addr,
+		NodeID:   n.NodeID,
+		Method:   LEECH,
+		Payload:  mds,
+		Comment:  "",
+	}
 	for _, p := range c.ClusterPeers {
 		err := SendMsg(n.UDPconn, newMsg, p.Addr)
 		if err != nil {
@@ -389,6 +407,10 @@ func Leech(n *Node, cname ClusterName) error {
 	fmt.Printf("[LEECH REQUEST]: Request sent to peers in cluster: %s\n", cname)
 
 	return nil
+}
+
+func SendDataSegments(ds []DataSegment) {
+
 }
 
 // when sending a message from a CALL rpc type, if the response takes too long, we drop and forget it.

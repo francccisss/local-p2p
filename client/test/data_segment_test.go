@@ -23,11 +23,21 @@ func TestDataSegmentation(t *testing.T) {
 		fmt.Println(err)
 		t.FailNow()
 	}
+
 	b, err := os.ReadFile(path + en.Name())
+
 	if err != nil {
 		fmt.Println(err)
 		t.FailNow()
 	}
+	of, err := os.Open(path + en.Name())
+	if err != nil {
+		fmt.Println(err)
+		t.FailNow()
+	}
+
+	ofBuf := make([]byte, 1024)
+	of.ReadAt()
 
 	ds, err := protocol.DataSegmentation(b, 10)
 	if err != nil {
