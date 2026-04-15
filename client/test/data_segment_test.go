@@ -26,72 +26,66 @@ func TestDataSegmentation(t *testing.T) {
 		t.FailNow()
 	}
 	b, err := os.ReadFile(path + en.Name())
-
 	fmt.Printf("file len: %d\n", len(b))
 
 	if err != nil {
 		fmt.Println("Error Reading file for len")
 		t.FailNow()
 	}
-	var fileLen float64 = float64(len(b))
-
-	// given the length of a file and the pagesize for mmap as 4kb
-	// if fileLen > page_size = total segment > 1
-	blockSize := int64(os.Getpagesize() * 256)
-
-	fmt.Printf("Chunk size - %d: Bytes, %d: Mega Bytes\n", int(blockSize), int(blockSize/1024))
-
-	ceild := math.Ceil(fileLen / float64(blockSize))
-
-	dataInfo := protocol.DataSegment{
-		TotalSegments:   int(ceild),
-		SegmentPosition: 0,
-	}
-
-	fmt.Printf("Total segments to create: %d\n", dataInfo.TotalSegments)
-
-	// segmentsize will be the pzgesize that can be returned by mmap()
-	dsComb := make([][]byte, dataInfo.TotalSegments)
 
 	fd, err := syscall.Open(path+en.Name(), syscall.O_RDONLY, 0644)
-
 	if err != nil {
 		fmt.Println("Error Opening file through syscall")
 		t.FailNow()
 	}
-	for range dataInfo.TotalSegments {
-		tmpChunk := make([]byte, blockSize)
-		fmt.Printf("Segment Pos: %d\n", dataInfo.SegmentPosition)
-		fmt.Printf("Segment Size: %d\n", blockSize)
+	finfo, err := en.Info()
+	if err != nil {
+		fmt.Println("Error Opening file through syscall")
+		t.FailNow()
+	}
+	// sent by peer to request file
+	dfinfo := protocol.FileRequest{
+		Hash:      "IosevkaTerm.zip",
+		Size:      finfo.Size(),
+		Offset:    0,
+		BlockSize: int64(os.Getpagesize() * 256),
+	}
 
-		buf, err := protocol.DataSegmentation(fd, path+en.Name(), int64(dataInfo.SegmentPosition), int64(blockSize))
+	dfinfo.Segments = int64(math.Ceil(float64(dfinfo.Size) / float64(dfinfo.BlockSize)))
+
+	fmt.Printf("Chunk size - %d: Bytes, %d: Mega Bytes\n", int(dfinfo.BlockSize), int(dfinfo.BlockSize/1024))
+
+	fmt.Printf("Total segments to create: %d\n", dfinfo.Segments)
+
+	// segmentsize will be the pzgesize that can be returned by mmap()
+	// simulates node retrieving and incrementing segment Position
+	dsComb := make([][]byte, dfinfo.Segments)
+
+	ds.ClusterName = protocol.ClusterName(dfinfo.Hash)
+	ds.TotalSegments = dfinfo.Segments
+	for i := range dfinfo.Segments {
+		fmt.Printf("Segment Pos: %d\n", dfinfo.Offset)
+		fmt.Printf("Segment Size: %d\n", dfinfo.BlockSize)
+
+		ds, err := protocol.CreateDataSegment(fd, i, dfinfo)
 
 		if err != nil {
 			fmt.Println(err)
 			t.FailNow()
 		}
 
-		// simulates node retrieving and incrementing segment Position
-		rem := min(blockSize, int64(fileLen)-int64(dataInfo.SegmentPosition))
-		copy(tmpChunk, buf[:rem])
-		dsComb = append(dsComb, tmpChunk)
-
-		err = syscall.Munmap(buf)
-		if err != nil {
-			fmt.Printf("[TEST ERROR]: %s", err)
-			t.Fatalf("[Munmap ERROR]: %s", err)
-		}
-
-		dataInfo.SegmentPosition += int(rem)
+		dsComb = append(dsComb, ds.DataChunk)
+		dfinfo.Offset += int64(dfinfo.BlockSize)
 	}
+
 	//return
 
 	tmp := slices.Concat(dsComb...)
 
-	fmt.Printf("Number of Chunks from DS: %d\n", dataInfo.TotalSegments)
+	fmt.Printf("Number of Chunks from DS: %d\n", dfinfo.Segments)
 	fmt.Printf("original file len: %d\n", len(b))
 	fmt.Printf("transported file len: %d\n", len(tmp))
-	err = os.WriteFile("Iozevka.zip", tmp, 0644)
+	err = os.WriteFile("/temp/Iozevka.zip", tmp, 0644)
 	if err != nil {
 		fmt.Println(err.Error())
 		t.FailNow()

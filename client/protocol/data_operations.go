@@ -8,39 +8,63 @@ import (
 )
 
 type FileMetaData struct {
-	Name string
-	Hash string
-	Size uint64
+	Name      string
+	Hash      string
+	Size      uint64
+	BlockSize int64
 }
 
-// Payload of RPCMessage for LEECH call method
+// used for RPC Message by requester
+type FileRequest struct {
+	Segments  int64
+	Hash      string
+	Size      int64
+	Offset    int64
+	BlockSize int64
+}
+
+// used for RPC Message by receiver to reply to the iniator
 type DataSegment struct {
-	TotalSegments   int
-	SegmentPosition int
-	SegmentNum      int
+	TotalSegments   int64
+	SegmentPosition uint64
 	ClusterName     ClusterName // string ID of the file to be sent
 	DataChunk       []byte
 }
 
-func ExtractSegments(ds []DataSegment, segPos int, segNum int) []DataSegment {
-	total := ds[0].TotalSegments
-	// handling out of bounds to return only what is left from segPos
-	nth := min(((segNum + segPos) - total), total-segPos)
-	retds := ds[segPos : segPos+nth]
-	return retds
+func CreateDataSegment(fd int, i int64, dataInfo FileRequest) (DataSegment, error) {
+
+	buf, err := ReadFileBuf(fd, dataInfo.Size, dataInfo.Offset, dataInfo.BlockSize)
+	if err != nil {
+		return DataSegment{}, err
+	}
+
+	return DataSegment{
+		SegmentPosition: uint64(i),
+		DataChunk:       buf,
+	}, nil
+
 }
 
 // multiple peers would need to coordinate how many segments
-func DataSegmentation(fd int, path string, startPos int64, offset int64) ([]byte, error) {
+func ReadFileBuf(fd int, fileLen int64, offset int64, blockSize int64) ([]byte, error) {
 
-	buf, err := syscall.Mmap(fd, startPos, int(offset), syscall.PROT_READ, syscall.MAP_SHARED)
+	buf, err := syscall.Mmap(fd, offset, int(blockSize), syscall.PROT_READ, syscall.MAP_SHARED)
 
 	if err != nil {
 		fmt.Println("Error accessing memory mapped disk")
 		return nil, err
 	}
+	rem := min(blockSize, fileLen-offset)
+	tmp := make([]byte, rem)
+	copy(tmp, buf[:rem])
 
-	return buf, nil
+	err = syscall.Munmap(buf)
+	if err != nil {
+		fmt.Println("Error accessing memory mapped disk")
+		return nil, err
+	}
+
+	return tmp, nil
 }
 
 func Checkfile(hashKey string, FILE_LOCATION string) (os.DirEntry, string, error) {
