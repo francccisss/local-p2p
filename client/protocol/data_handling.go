@@ -31,21 +31,16 @@ func ExtractSegments(ds []DataSegment, segPos int, segNum int) []DataSegment {
 }
 
 // multiple peers would need to coordinate how many segments
-func DataSegmentation(fd int, path string, startPos int64, offset int64) (DataSegment, error) {
+func DataSegmentation(fd int, path string, startPos int64, offset int64) ([]byte, error) {
 
 	buf, err := syscall.Mmap(fd, startPos, int(offset), syscall.PROT_READ, syscall.MAP_SHARED)
 
 	if err != nil {
 		fmt.Println("Error accessing memory mapped disk")
-		return DataSegment{}, err
+		return nil, err
 	}
-	newds := DataSegment{DataChunk: buf, SegmentPosition: int(startPos)}
 
-	err = syscall.Munmap(buf)
-	if err != nil {
-		return DataSegment{}, err
-	}
-	return newds, nil
+	return buf, nil
 }
 
 func Checkfile(hashKey string, FILE_LOCATION string) (os.DirEntry, string, error) {

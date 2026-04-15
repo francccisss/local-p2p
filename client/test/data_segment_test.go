@@ -51,7 +51,7 @@ func TestDataSegmentation(t *testing.T) {
 	fmt.Printf("Total segments to create: %d\n", dataInfo.TotalSegments)
 
 	// segmentsize will be the pzgesize that can be returned by mmap()
-	dsComb := make([]protocol.DataSegment, dataInfo.TotalSegments)
+	dsComb := make([][]byte, dataInfo.TotalSegments)
 
 	fd, err := syscall.Open(path+en.Name(), syscall.O_RDONLY, 0644)
 
@@ -59,12 +59,12 @@ func TestDataSegmentation(t *testing.T) {
 		fmt.Println("Error Opening file through syscall")
 		t.FailNow()
 	}
-	for offset := int64(0); offset < int64(fileLen); offset += int64(blockSize) {
+	for range dataInfo.TotalSegments {
+		tmpChunk := make([]byte, blockSize)
 		fmt.Printf("Segment Pos: %d\n", dataInfo.SegmentPosition)
 		fmt.Printf("Segment Size: %d\n", blockSize)
 
-		dataInfo.SegmentPosition = int(offset)
-		dss, err := protocol.DataSegmentation(fd, path+en.Name(), int64(dataInfo.SegmentPosition), int64(blockSize))
+		buf, err := protocol.DataSegmentation(fd, path+en.Name(), int64(dataInfo.SegmentPosition), int64(blockSize))
 
 		if err != nil {
 			fmt.Println(err)
@@ -72,17 +72,23 @@ func TestDataSegmentation(t *testing.T) {
 		}
 
 		// simulates node retrieving and incrementing segment Position
-		rem := min(blockSize, int64(fileLen)-offset)
-		dss.DataChunk = dss.DataChunk[:rem]
-		dsComb = append(dsComb, dss)
-	}
-	chunks := make([][]byte, len(dsComb))
-	for i, d := range dsComb {
-		chunks[i] = d.DataChunk
-	}
-	tmp := slices.Concat(chunks...)
+		rem := min(blockSize, int64(fileLen)-int64(dataInfo.SegmentPosition))
+		copy(tmpChunk, buf[:rem])
+		dsComb = append(dsComb, tmpChunk)
 
-	fmt.Printf("Number of Chunks from DS: %d\n", len(chunks))
+		err = syscall.Munmap(buf)
+		if err != nil {
+			fmt.Printf("[TEST ERROR]: %s", err)
+			t.Fatalf("[Munmap ERROR]: %s", err)
+		}
+
+		dataInfo.SegmentPosition += int(rem)
+	}
+	//return
+
+	tmp := slices.Concat(dsComb...)
+
+	fmt.Printf("Number of Chunks from DS: %d\n", dataInfo.TotalSegments)
 	fmt.Printf("original file len: %d\n", len(b))
 	fmt.Printf("transported file len: %d\n", len(tmp))
 	err = os.WriteFile("Iozevka.zip", tmp, 0644)
