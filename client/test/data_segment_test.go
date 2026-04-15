@@ -4,11 +4,12 @@ import (
 	"client/protocol"
 	"context"
 	"fmt"
-	"io/fs"
+	"math"
 	"math/rand"
 	"os"
 	"slices"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -18,51 +19,78 @@ func TestDataSegmentation(t *testing.T) {
 	n := protocol.Node{
 		FILE_LOCATION: "/files/",
 	}
-	en, path, err := protocol.Checkfile("newfile.webp", n.FILE_LOCATION)
+
+	en, path, err := protocol.Checkfile("IosevkaTerm.zip", n.FILE_LOCATION)
 	if err != nil {
 		fmt.Println(err)
 		t.FailNow()
 	}
-
 	b, err := os.ReadFile(path + en.Name())
 
-	if err != nil {
-		fmt.Println(err)
-		t.FailNow()
-	}
-	of, err := os.Open(path + en.Name())
-	if err != nil {
-		fmt.Println(err)
-		t.FailNow()
-	}
-
-	ofBuf := make([]byte, 1024)
-	of.ReadAt()
-
-	ds, err := protocol.DataSegmentation(b, 10)
-	if err != nil {
-		fmt.Println(err)
-		t.FailNow()
-	}
-
-	var tmp [][]byte
-	for _, d := range ds {
-		fmt.Printf("Segment #%d\nData: %+v\n", d.SegmentNum, d)
-		tmp = append(tmp, d.DataChunk)
-	}
-	conctData := slices.Concat(tmp...)
-	fmt.Printf("Data len from segment: %d\n", len(conctData))
-
-	var fm fs.FileMode
-
-	fm |= fs.ModePerm
-
-	err = os.WriteFile("prettychill.webp", conctData, fm)
+	fmt.Printf("file len: %d\n", len(b))
 
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Error Reading file for len")
 		t.FailNow()
 	}
+	var fileLen float64 = float64(len(b))
+
+	// given the length of a file and the pagesize for mmap as 4kb
+	// if fileLen > page_size = total segment > 1
+	blockSize := int64(os.Getpagesize() * 256)
+
+	fmt.Printf("Chunk size - %d: Bytes, %d: Mega Bytes\n", int(blockSize), int(blockSize/1024))
+
+	ceild := math.Ceil(fileLen / float64(blockSize))
+
+	dataInfo := protocol.DataSegment{
+		TotalSegments:   int(ceild),
+		SegmentPosition: 0,
+	}
+
+	fmt.Printf("Total segments to create: %d\n", dataInfo.TotalSegments)
+
+	// segmentsize will be the pzgesize that can be returned by mmap()
+	dsComb := make([]protocol.DataSegment, dataInfo.TotalSegments)
+
+	fd, err := syscall.Open(path+en.Name(), syscall.O_RDONLY, 0644)
+
+	if err != nil {
+		fmt.Println("Error Opening file through syscall")
+		t.FailNow()
+	}
+	for offset := int64(0); offset < int64(fileLen); offset += int64(blockSize) {
+		fmt.Printf("Segment Pos: %d\n", dataInfo.SegmentPosition)
+		fmt.Printf("Segment Size: %d\n", blockSize)
+
+		dataInfo.SegmentPosition = int(offset)
+		dss, err := protocol.DataSegmentation(fd, path+en.Name(), int64(dataInfo.SegmentPosition), int64(blockSize))
+
+		if err != nil {
+			fmt.Println(err)
+			t.FailNow()
+		}
+
+		// simulates node retrieving and incrementing segment Position
+		rem := min(blockSize, int64(fileLen)-offset)
+		dss.DataChunk = dss.DataChunk[:rem]
+		dsComb = append(dsComb, dss)
+	}
+	chunks := make([][]byte, len(dsComb))
+	for i, d := range dsComb {
+		chunks[i] = d.DataChunk
+	}
+	tmp := slices.Concat(chunks...)
+
+	fmt.Printf("Number of Chunks from DS: %d\n", len(chunks))
+	fmt.Printf("original file len: %d\n", len(b))
+	fmt.Printf("transported file len: %d\n", len(tmp))
+	err = os.WriteFile("Iozevka.zip", tmp, 0644)
+	if err != nil {
+		fmt.Println(err.Error())
+		t.FailNow()
+	}
+
 }
 
 func TestFileProbe(t *testing.T) {

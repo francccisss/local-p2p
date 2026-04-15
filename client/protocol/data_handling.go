@@ -3,8 +3,8 @@ package protocol
 import (
 	"client/utils"
 	"fmt"
-	"math"
 	"os"
+	"syscall"
 )
 
 type FileMetaData struct {
@@ -30,53 +30,22 @@ func ExtractSegments(ds []DataSegment, segPos int, segNum int) []DataSegment {
 	return retds
 }
 
-func VerifyChecksum() {
-
-}
-
 // multiple peers would need to coordinate how many segments
-func DataSegmentation(buf []byte, numOfSegments int) ([]DataSegment, error) {
-	fmt.Printf("Number of segments to create: %d\n", numOfSegments)
+func DataSegmentation(fd int, path string, startPos int64, offset int64) (DataSegment, error) {
 
-	dataLen := len(buf)
+	buf, err := syscall.Mmap(fd, startPos, int(offset), syscall.PROT_READ, syscall.MAP_SHARED)
 
-	fmt.Printf("Size of data: %d\n", dataLen)
-	var tmp []DataSegment
-
-	lenOfSegments := int(dataLen/numOfSegments) + 1 // + 1 for the remaining bytes when division has remainder
-
-	fmt.Printf("Length of a Segment: %d\n", lenOfSegments)
-	for i := range numOfSegments {
-		// segmentIndex increases relative to i
-		// if lenOfSegments = 5
-		// i = 0 segmentIndex moves 0
-		// i = 1 segmentIndex is 5
-		// i = 2 segmentIndex is 10...
-
-		// segmentIndex+diff is the range
-		// so range moves relative to segmentIndex
-		// from segmentIndex move depending on the remaining data
-		// in the buf to be pushed into the datasegment
-		// if segmentIndex = 0
-		// range = segmentIndex + lenOfsegments
-		// so range is 5 since segment = 0
-		// segmentIndex = 5
-		// range = segment + lenOfSegments
-		// so range is 5 + 5 = 10
-		// difference compares lenOfSegments and remaining data
-		// if the calculation of the remaining data > lenOfSegments
-		// then add segmentIndex by lenOfSegments else use minimum value
-
-		segmentIndex := i * lenOfSegments
-		diff := min(lenOfSegments, int(math.Abs(float64((segmentIndex)-len(buf))))) // i hate this conversion
-		ds := DataSegment{
-			SegmentNum: 0,
-			DataChunk:  buf[segmentIndex : segmentIndex+diff],
-		}
-		tmp = append(tmp, ds)
+	if err != nil {
+		fmt.Println("Error accessing memory mapped disk")
+		return DataSegment{}, err
 	}
+	newds := DataSegment{DataChunk: buf, SegmentPosition: int(startPos)}
 
-	return tmp, nil
+	err = syscall.Munmap(buf)
+	if err != nil {
+		return DataSegment{}, err
+	}
+	return newds, nil
 }
 
 func Checkfile(hashKey string, FILE_LOCATION string) (os.DirEntry, string, error) {
@@ -110,7 +79,7 @@ func recursiveFileSearch(fileKey string, entries []os.DirEntry, wd *[]string) (o
 	for _, entry := range entries {
 		info, err := entry.Info()
 		entryName := info.Name()
-		fmt.Printf("entry: %s\n", entryName)
+		fmt.Printf("Entry located: %s\n", entryName)
 		if err != nil {
 			fmt.Printf("Error Unable to get info for file: %s\n", entryName)
 			fmt.Printf("Reason: %s\n", err)
@@ -136,6 +105,8 @@ func recursiveFileSearch(fileKey string, entries []os.DirEntry, wd *[]string) (o
 			*wd = (*wd)[:len(*wd)-1]
 			continue
 		}
+
+		fmt.Printf("Found File: %s\n", entryName)
 		return foundEntry, nil
 	}
 	return nil, fmt.Errorf("No entries matching the fileKey.")
