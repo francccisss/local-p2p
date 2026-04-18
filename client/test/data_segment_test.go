@@ -9,7 +9,6 @@ import (
 	"os"
 	"slices"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -33,11 +32,6 @@ func TestDataSegmentation(t *testing.T) {
 		t.FailNow()
 	}
 
-	fd, err := syscall.Open(path+en.Name(), syscall.O_RDONLY, 0644)
-	if err != nil {
-		fmt.Println("Error Opening file through syscall")
-		t.FailNow()
-	}
 	finfo, err := en.Info()
 	if err != nil {
 		fmt.Println("Error Opening file through syscall")
@@ -51,6 +45,7 @@ func TestDataSegmentation(t *testing.T) {
 		BlockSize: int64(os.Getpagesize() * 256),
 	}
 
+	// this is all set from reading the meta file from DHT Server
 	dfinfo.Segments = int64(math.Ceil(float64(dfinfo.Size) / float64(dfinfo.BlockSize)))
 
 	fmt.Printf("Chunk size - %d: Bytes, %d: Mega Bytes\n", int(dfinfo.BlockSize), int(dfinfo.BlockSize/1024))
@@ -61,13 +56,13 @@ func TestDataSegmentation(t *testing.T) {
 	// simulates node retrieving and incrementing segment Position
 	dsComb := make([][]byte, dfinfo.Segments)
 
-	ds.ClusterName = protocol.ClusterName(dfinfo.Hash)
-	ds.TotalSegments = dfinfo.Segments
-	for i := range dfinfo.Segments {
+	ds := protocol.DataSegment{}
+
+	for range dfinfo.Segments {
 		fmt.Printf("Segment Pos: %d\n", dfinfo.Offset)
 		fmt.Printf("Segment Size: %d\n", dfinfo.BlockSize)
 
-		ds, err := protocol.CreateDataSegment(fd, i, dfinfo)
+		ds, err = protocol.CreateDataSegment(path+en.Name(), &dfinfo)
 
 		if err != nil {
 			fmt.Println(err)
@@ -75,71 +70,25 @@ func TestDataSegmentation(t *testing.T) {
 		}
 
 		dsComb = append(dsComb, ds.DataChunk)
-		dfinfo.Offset += int64(dfinfo.BlockSize)
+		fmt.Println("--------------------------------------------------")
+		fmt.Printf("Segment Number: %d\n", ds.SegmentPosition)
+		fmt.Println("--------------------------------------------------")
 	}
-
-	//return
 
 	tmp := slices.Concat(dsComb...)
 
 	fmt.Printf("Number of Chunks from DS: %d\n", dfinfo.Segments)
 	fmt.Printf("original file len: %d\n", len(b))
 	fmt.Printf("transported file len: %d\n", len(tmp))
-	err = os.WriteFile("/temp/Iozevka.zip", tmp, 0644)
+	err = os.WriteFile("./tmp/Iozevka.zip", tmp, 0644)
 	if err != nil {
 		fmt.Println(err.Error())
 		t.FailNow()
 	}
 
-}
-
-func TestFileProbe(t *testing.T) {
-	testPort := 3030
-	testFileData := fileData{hash: "newfile.webp"}
-	UDPConn, err := protocol.InitUDPConn(testPort)
-	if err != nil {
-		fmt.Printf("[TEST ERROR]: %s", err)
-		t.FailNow()
-	}
-
-	client := protocol.NewNode(
-		UDPConn,
-		protocol.NodeAddr{
-			IP:   []byte("localhost"),
-			Port: testPort},
-		"Snicker",
-		"/files/")
-
-	// bootstrap neighbors retrieved from DHT server
-	protocol.CreateCluster(client, testFileData.hash)
-
-	c, ok := (*client.ClusterTable)[testFileData.hash]
-	if !ok {
-		fmt.Printf("[TEST ERROR]: unable to find cluster\n")
-		t.FailNow()
-	}
-	c.ClusterPeers = append(c.ClusterPeers, protocol.ClusterPeer{NodeID: "localhost:5656", Addr: protocol.NodeAddr{IP: []byte("localhost"), Port: 5656}})
-	protocol.Probe(client, c.ClusterName)
-	buff := make([]byte, 4096)
-	for {
-
-		n, _, err := client.UDPconn.ReadFromUDP(buff)
-		if err != nil {
-			fmt.Println(err)
-			t.FailNow()
-		}
-		msg, err := protocol.ReadRPCMessage(buff[:n])
-		if err != nil {
-			fmt.Println(err)
-			t.FailNow()
-		}
-		err = protocol.RecvRPCMessage(client, msg)
-
-		if err != nil {
-			fmt.Println(err)
-			t.FailNow()
-		}
-	}
+	fmt.Printf("DS.Hash: %s\n", ds.ClusterName)
+	fmt.Printf("DS.TotalSegments: %d\n", ds.TotalSegments)
+	fmt.Printf("DS.SegmentPosition: %d\n", ds.SegmentPosition)
 
 }
 

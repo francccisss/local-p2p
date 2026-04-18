@@ -26,35 +26,45 @@ type FileRequest struct {
 // used for RPC Message by receiver to reply to the iniator
 type DataSegment struct {
 	TotalSegments   int64
-	SegmentPosition uint64
+	SegmentPosition int64
 	ClusterName     ClusterName // string ID of the file to be sent
 	DataChunk       []byte
 }
 
-func CreateDataSegment(fd int, i int64, dataInfo FileRequest) (DataSegment, error) {
+// Wrapper for ReadFileBuf to return Buffer instead of DataSegment
+func CreateDataSegment(path string, dataInfo *FileRequest) (DataSegment, error) {
 
-	buf, err := ReadFileBuf(fd, dataInfo.Size, dataInfo.Offset, dataInfo.BlockSize)
+	buf, err := ReadFileBuf(path, dataInfo)
 	if err != nil {
 		return DataSegment{}, err
 	}
 
-	return DataSegment{
-		SegmentPosition: uint64(i),
+	newSegment := DataSegment{
 		DataChunk:       buf,
-	}, nil
+		ClusterName:     ClusterName(dataInfo.Hash),
+		TotalSegments:   dataInfo.Size,
+		SegmentPosition: dataInfo.Offset / dataInfo.BlockSize,
+	}
+
+	return newSegment, nil
 
 }
 
 // multiple peers would need to coordinate how many segments
-func ReadFileBuf(fd int, fileLen int64, offset int64, blockSize int64) ([]byte, error) {
+func ReadFileBuf(path string, dataInfo *FileRequest) ([]byte, error) {
 
-	buf, err := syscall.Mmap(fd, offset, int(blockSize), syscall.PROT_READ, syscall.MAP_SHARED)
+	fd, err := syscall.Open(path, syscall.O_RDONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+
+	buf, err := syscall.Mmap(fd, dataInfo.Offset, int(dataInfo.BlockSize), syscall.PROT_READ, syscall.MAP_SHARED)
 
 	if err != nil {
 		fmt.Println("Error accessing memory mapped disk")
 		return nil, err
 	}
-	rem := min(blockSize, fileLen-offset)
+	rem := min(dataInfo.BlockSize, dataInfo.Size-dataInfo.Offset)
 	tmp := make([]byte, rem)
 	copy(tmp, buf[:rem])
 
@@ -64,6 +74,7 @@ func ReadFileBuf(fd int, fileLen int64, offset int64, blockSize int64) ([]byte, 
 		return nil, err
 	}
 
+	dataInfo.Offset += int64(dataInfo.BlockSize)
 	return tmp, nil
 }
 
