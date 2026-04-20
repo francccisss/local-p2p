@@ -19,7 +19,8 @@ func TestDataSegmentation(t *testing.T) {
 		FILE_LOCATION: "/files/",
 	}
 
-	en, path, err := protocol.Checkfile("newfile.webp", n.FILE_LOCATION)
+	testFile := "IosevkaTerm.zip"
+	en, path, err := protocol.Checkfile(testFile, n.FILE_LOCATION)
 	if err != nil {
 		fmt.Println(err)
 		t.FailNow()
@@ -39,7 +40,7 @@ func TestDataSegmentation(t *testing.T) {
 	}
 	// sent by peer to request file
 	dfinfo := protocol.FileRequest{
-		Hash:      "IosevkaTerm.zip",
+		Hash:      testFile,
 		Size:      finfo.Size(),
 		Offset:    0,
 		BlockSize: int64(os.Getpagesize() * 256),
@@ -59,37 +60,29 @@ func TestDataSegmentation(t *testing.T) {
 		fmt.Printf("Segment Size: %d\n", dfinfo.BlockSize)
 
 		ds, headerLen, err := protocol.CreateDataSegment(path+en.Name(), &dfinfo)
-		dsBuf := ds.Bytes()
-		sh, n := protocol.ParseSegmentHeader(dsBuf[:headerLen])
 
 		if err != nil {
 			fmt.Println(err)
 			t.FailNow()
 		}
+		dsBuf := ds.Bytes()
+		sh, n := protocol.ParseSegmentHeader(dsBuf[:headerLen])
 
 		fmt.Println("--------------------------------------------------")
 		fmt.Printf("Cluster Name: %s\n", sh.ClusterName)
-		fmt.Printf("Segment Number: %d\n", sh.SegmentPosition)
-		fmt.Printf("Total Segments: %d\n", sh.TotalSegments)
+		fmt.Printf("Total Segments: %d\n", dfinfo.Segments)
+		fmt.Printf("Segment Position: %d\n", sh.SegmentPosition)
+		fmt.Printf("Segment Size: %d\n", sh.SegmentSize)
 		fmt.Printf("Payload Size: %d\n", len(dsBuf[n:]))
 		db.Write(dsBuf[n:])
 		fmt.Println("--------------------------------------------------")
 	}
 
-	// tmp := slices.Concat(dsComb...)
-	//
-	// fmt.Printf("Number of Chunks from DS: %d\n", dfinfo.Segments)
-	// fmt.Printf("original file len: %d\n", len(b))
-	// fmt.Printf("transported file len: %d\n", len(tmp))
-	// err = os.WriteFile("./tmp/Iozevka.zip", tmp, 0644)
-	// if err != nil {
-	// 	fmt.Println(err.Error())
-	// 	t.FailNow()
-	// }
-	//
-	// fmt.Printf("DS.Hash: %s\n", ds.ClusterName)
-	// fmt.Printf("DS.TotalSegments: %d\n", ds.TotalSegments)
-	// fmt.Printf("DS.SegmentPosition: %d\n", ds.SegmentPosition)
+	err = os.WriteFile("./tmp/Iozevka.zip", db.Bytes(), 0644)
+	if err != nil {
+		fmt.Println(err.Error())
+		t.FailNow()
+	}
 
 }
 
