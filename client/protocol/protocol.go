@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -49,13 +50,14 @@ type BodyMsg struct {
 
 // MsgType could be either reply or call
 type RPCMsg struct {
-	RPCType    MsgType
-	NodeAddr   NodeAddr
-	NodeID     NodeID
-	Method     Method
-	Payload    []byte
-	StatusCode StatusCode
-	Comment    string
+	RPCType     MsgType
+	NodeAddr    NodeAddr
+	NodeID      NodeID
+	Method      Method
+	Payload     []byte
+	PayloadSize uint32
+	StatusCode  StatusCode
+	Message     string
 }
 
 type PingMessage struct {
@@ -69,6 +71,7 @@ func ReadRPCMessage(buffer []byte) (RPCMsg, error) {
 	var msg RPCMsg
 	err := json.Unmarshal(buffer, &msg)
 	if err != nil {
+		fmt.Println("Unable to Unmarshal")
 		return RPCMsg{}, err
 	}
 	return msg, nil
@@ -120,10 +123,11 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 		fmt.Println("Call Message")
 		// PRELOADING RPC MESSAGE
 		newRPCMsg = RPCMsg{
+			Method:     msg.Method,
 			RPCType:    REPLY,
 			NodeID:     n.NodeID,
 			NodeAddr:   NodeAddr{IP: n.Addr.IP, Port: n.Addr.Port},
-			Comment:    "",
+			Message:    "",
 			StatusCode: 0,
 		}
 		switch msg.Method {
@@ -147,8 +151,9 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			if !ok {
 				fmt.Println("Cluster does not exist")
 				newRPCMsg.StatusCode = ERROR
-				newRPCMsg.Comment = fmt.Sprintf("Cluster %s does not exist", incomingPingMsg.ClusterName)
-				err = SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
+				newRPCMsg.Message = fmt.Sprintf("Cluster %s does not exist", incomingPingMsg.ClusterName)
+				b, err := WrapMsgToBuffer(newRPCMsg, nil)
+				err = SendMsg(n.UDPconn, b, msg.NodeAddr)
 				if err != nil {
 					return err
 				}
@@ -159,7 +164,10 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 			fmt.Printf("Adding '%s' to the cluster\n", msg.NodeID)
 
-			cl.NewClusterPeer(msg.NodeAddr, msg.NodeID)
+			cp := cl.NewClusterPeer(msg.NodeAddr, msg.NodeID)
+			if cp == nil {
+				newRPCMsg.Message = fmt.Sprintf("Peer %s already exists", msg.NodeID)
+			}
 
 			for _, cp := range cl.ClusterPeers {
 				fmt.Printf("Peers in cluster: '%s'\n", cp.NodeID)
@@ -174,27 +182,54 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			if err != nil {
 				return err
 			}
-			newRPCMsg.Payload = b
-			err = SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
+			buff, err := WrapMsgToBuffer(newRPCMsg, b)
+			if err != nil {
+				return err
+			}
+			err = SendMsg(n.UDPconn, buff, msg.NodeAddr)
 
 			if err != nil {
 				fmt.Println("Unable to respond to ping")
 				return err
 			}
-
-			fmt.Printf("Reply sent\n")
+			fmt.Println("Ping")
 		case LEECH:
 			// a call to leech received a single DataSegment
 			// a reply to leech receives an array of DataSegments
-			var dsi DataSegment
-			err := json.Unmarshal(msg.Payload, &dsi)
+			var fr FileRequest
+			err := json.Unmarshal(msg.Payload, &fr)
 			if err != nil {
 				fmt.Println("Unable to unmarshal data segment")
 				return err
 			}
+			en, path, err := Checkfile(fr.Hash, n.FILE_LOCATION)
+			if err != nil {
+				fmt.Println("Unable to unmarshal data segment")
+				newRPCMsg.Message = err.Error()
+				newRPCMsg.StatusCode = ERROR
+				buff, err := WrapMsgToBuffer(newRPCMsg, nil)
+				if err != nil {
+					fmt.Println("[ERROR]: Unable to send message")
+				}
+				msgErr := SendMsg(n.UDPconn, buff, msg.NodeAddr)
+				if msgErr != nil {
+					fmt.Println("[ERROR]: Unable to send message")
+				}
+				return err
+			}
+			buf, _, err := CreateDataSegment(path+en.Name(), &fr)
+			if err != nil {
+				return err
+			}
+			b, err := WrapMsgToBuffer(newRPCMsg, buf.Bytes())
+			if err != nil {
+				return err
+			}
+			err = SendMsg(n.UDPconn, b, msg.NodeAddr)
+			if err != nil {
+				return err
+			}
 
-			// TODO: Read large files incrementally by position
-			// feed segments -> ExtractSegments()
 		case PROBE:
 			newRPCMsg.Method = PROBE
 			cname := string(msg.Payload)
@@ -202,9 +237,13 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 			if err != nil {
 				fmt.Printf("[PROBE REQUEST]: %s\n", err)
-				newRPCMsg.Comment = err.Error()
+				newRPCMsg.Message = err.Error()
 				newRPCMsg.StatusCode = status
-				err := SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
+				buf, err := WrapMsgToBuffer(newRPCMsg, nil)
+				if err != nil {
+					return fmt.Errorf("Unable to send message")
+				}
+				err = SendMsg(n.UDPconn, buf, msg.NodeAddr)
 				if err != nil {
 					return fmt.Errorf("Unable to send message")
 				}
@@ -218,12 +257,19 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 			newRPCMsg.Payload = b
 			newRPCMsg.StatusCode = SUCCESS
-			err = SendMsg(n.UDPconn, newRPCMsg, msg.NodeAddr)
+			buf, err := WrapMsgToBuffer(newRPCMsg, b)
+			if err != nil {
+				return err
+			}
+			err = SendMsg(n.UDPconn, buf, msg.NodeAddr)
+			if err != nil {
+				return err
+			}
 		}
 	case REPLY: // when peers/nodes send a call RPCType
 
 		if msg.StatusCode == ERROR {
-			return fmt.Errorf("%s", msg.Comment)
+			return fmt.Errorf("%s", msg.Message)
 		}
 		var seg DataSegment
 		err := json.Unmarshal(msg.Payload, &seg)
@@ -244,9 +290,38 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			if !ok {
 				return fmt.Errorf("NodeID Key does not exist for thread")
 			}
-			t.BytesReceived += len(msg.Payload)
+			var ds DataSegment
+			err := json.Unmarshal(msg.Payload, &ds)
+			if err != nil {
+				return err
+			}
+			// t.BytesReceived += len(ds.DataChunk)
 			t.NodeIDChann <- msg.NodeID
+			// calculate segments received currently
+			if ds.SegmentPosition == ds.TotalSegments {
+				fmt.Println("WE ARE DONE BUCKO")
+				return nil
+			}
+			// read the file to create a FileRequest
+			// the file contains the meta data of the file that is to
+			// be leeched from other peers
+			// TODO: make sure that we're calling openfile once
+			// store it in memory so we dont have to use syscall
+			// everytime a leech reply is received which would take potentially take
 
+			// TODO: For testing only remove this after testing the file transfer if it works
+			dfinfo := FileRequest{
+				Hash:      "IosevkaTerm.zip",
+				Size:      374780158,
+				Offset:    ds.SegmentPosition,
+				BlockSize: int64(os.Getpagesize()),
+			}
+			// TODO: For testing only remove this after testing the file transfer if it works
+
+			err = Leech(n, ds.ClusterName, false, dfinfo)
+			if err != nil {
+				return err
+			}
 		case PING:
 			// When receivers of the call responds/reply back to this
 			// process, create a new cluster with name and initialize
@@ -254,7 +329,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			// with the receiver's NodeID that it send from PING
 
 			if msg.StatusCode == ERROR {
-				return fmt.Errorf("%s", msg.Comment)
+				return fmt.Errorf("%s", msg.Message)
 			}
 			fmt.Printf("Ping received from %s\n", msg.NodeID)
 			var pingMsg PingMessage
@@ -262,21 +337,24 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			if err != nil {
 				return err
 			}
-			// Verified that the cluster does exist on other peers
-			// so create a cluster entry in the cluster table
-
-			// State of new node is set to IDLE on default
+			fmt.Println(msg.Message)
+			// // Verified that the cluster does exist on other peers
+			// // so create a cluster entry in the cluster table
+			//
+			// // State of new node is set to IDLE on default
 			convCname := pingMsg.ClusterName
 			cl, ok := (*n.ClusterTable)[convCname]
 			if !ok {
-				CreateCluster(n, convCname)
-				cl = (*n.ClusterTable)[convCname]
+				return fmt.Errorf("Cluster does not exist")
+				// CreateCluster(n, convCname)
+				// cl = (*n.ClusterTable)[convCname]
 			}
-			// update map
-
+			// // update map
+			//
 			cl.NewClusterPeerThread(msg.NodeID)
-			cl.NewClusterPeer(msg.NodeAddr, msg.NodeID)
+			// cl.NewClusterPeer(msg.NodeAddr, msg.NodeID)
 			fmt.Printf("Peer thread created in cluster '%s'\n", convCname)
+			fmt.Println("Pong")
 		case PROBE:
 			var fileMetaData FileMetaData
 			err := json.Unmarshal(msg.Payload, &fileMetaData)
@@ -297,8 +375,6 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 // n asks what other peers if they have this p.cname
 // in their table, if so, they add this node and set the status to idle.
-// This function can be used within a cluster, if passed in the peers of that cluster
-// or the neighboring nodes for creating a cluster table for p.cname in the sender process
 func Ping(n *Node, cname ClusterName) error {
 
 	var newMsg RPCMsg = RPCMsg{
@@ -324,8 +400,12 @@ func Ping(n *Node, cname ClusterName) error {
 			return err
 		}
 
-		newMsg.Payload = b
-		err = SendMsg(n.UDPconn, newMsg, p.Addr)
+		buf, err := WrapMsgToBuffer(newMsg, b)
+		if err != nil {
+			fmt.Printf("%s", err)
+			continue
+		}
+		err = SendMsg(n.UDPconn, buf, p.Addr)
 		if err != nil {
 			fmt.Printf("%s", err)
 			continue
@@ -347,11 +427,15 @@ func Probe(n *Node, cname ClusterName) error {
 		Method:   PROBE,
 		NodeID:   n.NodeID,
 		NodeAddr: n.Addr,
-		Payload:  []byte(cname),
 	}
 
 	for _, cp := range c.ClusterPeers {
-		err := SendMsg(n.UDPconn, newMsg, cp.Addr)
+
+		buf, err := WrapMsgToBuffer(newMsg, []byte(cname))
+		if err != nil {
+			continue
+		}
+		err = SendMsg(n.UDPconn, buf, cp.Addr)
 		if err != nil {
 			continue
 		}
@@ -361,7 +445,7 @@ func Probe(n *Node, cname ClusterName) error {
 
 }
 
-func Leech(n *Node, cname ClusterName, spawnThreads bool, ds DataSegment) error {
+func Leech(n *Node, cname ClusterName, spawnThreads bool, fr FileRequest) error {
 
 	c, ok := (*n.ClusterTable)[cname]
 	if !ok {
@@ -372,20 +456,20 @@ func Leech(n *Node, cname ClusterName, spawnThreads bool, ds DataSegment) error 
 
 	if spawnThreads {
 		var wg sync.WaitGroup
-		ctx, _ := context.WithTimeout(context.Background(), time.Second*3)
+		ctx, _ := context.WithTimeout(context.Background(), time.Second*120)
 		fmt.Println("[LEECH REQUEST]: Preparing Cluster Peer Threads for Byte Measurement")
 
 		for _, p := range c.ClusterPeers {
 			wg.Go(func() {
-				c.SpawnPeerThreads(&ctx, c.ClusterPeerThreads[p.NodeID])
+				go c.SpawnPeerThreads(&ctx, c.ClusterPeerThreads[p.NodeID])
 			})
 		}
-		fmt.Printf("[LEECH REQUEST]: Waiting for Cluster Peer Threads to deploy...")
+		fmt.Println("[LEECH REQUEST]: Waiting for Cluster Peer Threads to deploy...")
 		wg.Wait()
-		fmt.Printf("[LEECH REQUEST]: Done!")
+		fmt.Println("[LEECH REQUEST]: Done!")
 	}
 	fmt.Printf("[LEECH REQUEST]: Sending request to peers in cluster: %s\n", cname)
-	mds, err := json.Marshal(ds)
+	mds, err := json.Marshal(fr)
 	if err != nil {
 		return err
 	}
@@ -394,11 +478,15 @@ func Leech(n *Node, cname ClusterName, spawnThreads bool, ds DataSegment) error 
 		NodeAddr: n.Addr,
 		NodeID:   n.NodeID,
 		Method:   LEECH,
-		Payload:  mds,
-		Comment:  "",
+		Message:  "",
 	}
 	for _, p := range c.ClusterPeers {
-		err := SendMsg(n.UDPconn, newMsg, p.Addr)
+
+		buf, err := WrapMsgToBuffer(newMsg, mds)
+		if err != nil {
+			continue
+		}
+		err = SendMsg(n.UDPconn, buf, p.Addr)
 		if err != nil {
 			continue
 		}
@@ -409,18 +497,26 @@ func Leech(n *Node, cname ClusterName, spawnThreads bool, ds DataSegment) error 
 	return nil
 }
 
-func SendDataSegments(ds []DataSegment) {
+func WrapMsgToBuffer(msg RPCMsg, payload []byte) ([]byte, error) {
+	b, err := json.Marshal(msg)
+	if err != nil {
+		return nil, err
+	}
 
+	buf := make([]byte, 4)
+	binary.BigEndian.PutUint32(buf, uint32(len(b)))
+
+	buf = append(buf, b...)
+	if payload != nil {
+		buf = append(buf, payload...)
+	}
+
+	return buf, nil
 }
 
 // when sending a message from a CALL rpc type, if the response takes too long, we drop and forget it.
 // and consider that peer as offline
-func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
-	b, err := json.Marshal(message)
-	if err != nil {
-		return err
-	}
-
+func SendMsg(conn *net.UDPConn, message []byte, peerAddr NodeAddr) error {
 	ip := string(peerAddr.IP)
 	port := strconv.Itoa(peerAddr.Port)
 	raddr, err := net.ResolveUDPAddr("udp", ip+":"+port)
@@ -429,13 +525,16 @@ func SendMsg(conn *net.UDPConn, message RPCMsg, peerAddr NodeAddr) error {
 		return err
 	}
 
+	// first byte size of json meta data
+
 	fmt.Printf("Sending to: %s\n", ip+":"+port)
-	n, err := conn.WriteTo(b, raddr)
+
+	n, err := conn.WriteTo(message, raddr)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Marshalled: %d\nSent: %d\n", len(b), n)
+	fmt.Printf("Marshalled: %d\nSent: %d\n", len(message), n)
 
 	return nil
 }

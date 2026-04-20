@@ -1,13 +1,13 @@
 package test
 
 import (
+	"bytes"
 	"client/protocol"
 	"context"
 	"fmt"
 	"math"
 	"math/rand"
 	"os"
-	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -19,7 +19,7 @@ func TestDataSegmentation(t *testing.T) {
 		FILE_LOCATION: "/files/",
 	}
 
-	en, path, err := protocol.Checkfile("IosevkaTerm.zip", n.FILE_LOCATION)
+	en, path, err := protocol.Checkfile("newfile.webp", n.FILE_LOCATION)
 	if err != nil {
 		fmt.Println(err)
 		t.FailNow()
@@ -52,43 +52,44 @@ func TestDataSegmentation(t *testing.T) {
 
 	fmt.Printf("Total segments to create: %d\n", dfinfo.Segments)
 
-	// segmentsize will be the pzgesize that can be returned by mmap()
-	// simulates node retrieving and incrementing segment Position
-	dsComb := make([][]byte, dfinfo.Segments)
-
-	ds := protocol.DataSegment{}
+	var db bytes.Buffer
 
 	for range dfinfo.Segments {
 		fmt.Printf("Segment Pos: %d\n", dfinfo.Offset)
 		fmt.Printf("Segment Size: %d\n", dfinfo.BlockSize)
 
-		ds, err = protocol.CreateDataSegment(path+en.Name(), &dfinfo)
+		ds, headerLen, err := protocol.CreateDataSegment(path+en.Name(), &dfinfo)
+		dsBuf := ds.Bytes()
+		sh, n := protocol.ParseSegmentHeader(dsBuf[:headerLen])
 
 		if err != nil {
 			fmt.Println(err)
 			t.FailNow()
 		}
 
-		dsComb = append(dsComb, ds.DataChunk)
 		fmt.Println("--------------------------------------------------")
-		fmt.Printf("Segment Number: %d\n", ds.SegmentPosition)
+		fmt.Printf("Cluster Name: %s\n", sh.ClusterName)
+		fmt.Printf("Segment Number: %d\n", sh.SegmentPosition)
+		fmt.Printf("Total Segments: %d\n", sh.TotalSegments)
+		fmt.Printf("Payload Size: %d\n", len(dsBuf[n:]))
+		db.Write(dsBuf[n:])
 		fmt.Println("--------------------------------------------------")
 	}
 
-	tmp := slices.Concat(dsComb...)
-
-	fmt.Printf("Number of Chunks from DS: %d\n", dfinfo.Segments)
-	fmt.Printf("original file len: %d\n", len(b))
-	fmt.Printf("transported file len: %d\n", len(tmp))
-	err = os.WriteFile("./tmp/Iozevka.zip", tmp, 0644)
-	if err != nil {
-		fmt.Println(err.Error())
-		t.FailNow()
-	}
-
-	fmt.Printf("DS.Hash: %s\n", ds.ClusterName)
-	fmt.Printf("DS.TotalSegments: %d\n", ds.TotalSegments)
-	fmt.Printf("DS.SegmentPosition: %d\n", ds.SegmentPosition)
+	// tmp := slices.Concat(dsComb...)
+	//
+	// fmt.Printf("Number of Chunks from DS: %d\n", dfinfo.Segments)
+	// fmt.Printf("original file len: %d\n", len(b))
+	// fmt.Printf("transported file len: %d\n", len(tmp))
+	// err = os.WriteFile("./tmp/Iozevka.zip", tmp, 0644)
+	// if err != nil {
+	// 	fmt.Println(err.Error())
+	// 	t.FailNow()
+	// }
+	//
+	// fmt.Printf("DS.Hash: %s\n", ds.ClusterName)
+	// fmt.Printf("DS.TotalSegments: %d\n", ds.TotalSegments)
+	// fmt.Printf("DS.SegmentPosition: %d\n", ds.SegmentPosition)
 
 }
 
@@ -138,5 +139,57 @@ func TestClusterThreads(t *testing.T) {
 	for _, p := range peerArr {
 		cpt := clt.ClusterPeerThreads[p.NodeID]
 		fmt.Printf("[TEST]: %s | bytes received-%d | avg bytes-%d\n", p.NodeID, cpt.BytesReceived, cpt.AverageBytes)
+	}
+}
+
+func TestLeeching(t *testing.T) {
+	fmt.Println("[TEST]: Starting Leecher")
+	conn, err := protocol.InitUDPConn(3030)
+	if err != nil {
+		t.FailNow()
+	}
+	node := protocol.NewNode(conn, protocol.NodeAddr{IP: []byte("localhost"), Port: 3030}, "Leecher", "/files/")
+
+	// sent by peer to request file
+	dfinfo := protocol.FileRequest{
+		Hash:      "IosevkaTerm.zip",
+		Size:      374780158,
+		Offset:    0,
+		BlockSize: int64(os.Getpagesize()),
+	}
+
+	protocol.CreateCluster(node, protocol.ClusterName(dfinfo.Hash))
+	clt := (*node.ClusterTable)[protocol.ClusterName(dfinfo.Hash)]
+	clt.NewClusterPeer(protocol.NodeAddr{IP: []byte("localhost"), Port: 5656}, "Receiver")
+	clt.NewClusterPeerThread("Receiver")
+
+	err = protocol.Leech(node, protocol.ClusterName(dfinfo.Hash), true, dfinfo)
+	if err != nil {
+		fmt.Println(err)
+		t.FailNow()
+	}
+
+	for {
+		// TODO: Find a way to consume all bytes if exceeds buffer
+		buff := make([]byte, 4096*256) // exceeding size of buffer
+		// need to be able to know that there are remaining bytes in the
+		// kernel buffer that needs to be read from the full
+		// communication
+		n, _, err := node.UDPconn.ReadFromUDP(buff)
+		if err != nil {
+			fmt.Println(err)
+			t.FailNow()
+		}
+		msg, err := protocol.ReadRPCMessage(buff[:n])
+		if err != nil {
+			fmt.Println(err)
+			t.FailNow()
+		}
+		err = protocol.RecvRPCMessage(node, msg)
+		if err != nil {
+			fmt.Println(err)
+			t.FailNow()
+		}
+
 	}
 }

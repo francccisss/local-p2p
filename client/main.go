@@ -10,12 +10,6 @@ import (
 
 const FILE_LOCATION = "/files/"
 
-type fileData struct {
-	location string
-	hash     protocol.ClusterName
-	name     string
-}
-
 func main() {
 
 	fmt.Println("Client")
@@ -46,9 +40,19 @@ func main() {
 		"Receiver",
 		FILE_LOCATION,
 	)
-	testFileData := fileData{hash: "this is the hash of the file"}
-	protocol.CreateCluster(clientNode, testFileData.hash)
+	// #TODO: Remove this, this is only for testing
+	testFileData := protocol.FileMetaData{Hash: "IosevkaTerm.zip"}
+	protocol.CreateCluster(clientNode, protocol.ClusterName(testFileData.Hash))
+	// #TODO: Remove this, this is only for testing
 
+	// en, _, err := protocol.Checkfile(testFileData.Hash, FILE_LOCATION)
+	// if err != nil {
+	// 	fmt.Println(err)
+	// 	return
+	// }
+	// fmt.Println(en.Name())
+	//
+	// return
 	if err != nil {
 		fmt.Println(err.Error())
 		panic("Shutting down")

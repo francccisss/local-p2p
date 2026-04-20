@@ -55,6 +55,14 @@ func CreateCluster(n *Node, cname ClusterName) {
 }
 
 func (cl *Cluster) NewClusterPeer(addr NodeAddr, nodeID NodeID) *ClusterPeer {
+	for _, cp := range cl.ClusterPeers {
+		if cp.NodeID != nodeID {
+			continue
+		}
+		fmt.Printf("%s Already exists\n", nodeID)
+		return nil
+	}
+
 	newClusterPeer := &ClusterPeer{
 		Addr:   addr,
 		NodeID: nodeID,
@@ -77,14 +85,18 @@ func (cl *Cluster) NewClusterPeerThread(nodeID NodeID) *ClusterPeerThread {
 // will be received every reply to LEECH is received
 // Use ctx to cancel when leeching is done
 func (cl *Cluster) SpawnPeerThreads(ctx *context.Context, cpt *ClusterPeerThread) {
+	// handle nil of cpt
+	// if cpt == nil {
+	// 	return fmt.Errorf("Peer Thread is nil")
+	// }
 
 	for {
 		select {
 		case <-(*ctx).Done():
 			fmt.Println("TIMED OUT")
 			fmt.Println("Cleaning Thread")
-			// clean up thread ORR ELSEEE!!!
 			return
+			// clean up thread ORR ELSEEE!!!
 		case nodeID := <-(*cpt).NodeIDChann:
 			{
 				fmt.Printf("Transfer by: %s\n", nodeID)
