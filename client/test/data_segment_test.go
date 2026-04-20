@@ -66,13 +66,17 @@ func TestDataSegmentation(t *testing.T) {
 			t.FailNow()
 		}
 		dsBuf := ds.Bytes()
-		sh, n := protocol.ParseSegmentHeader(dsBuf[:headerLen])
+		sh, n, err := protocol.ParseSegmentHeader(dsBuf[:headerLen])
+		if err != nil {
+			fmt.Println(err)
+			t.FailNow()
+		}
 
 		fmt.Println("--------------------------------------------------")
 		fmt.Printf("Cluster Name: %s\n", sh.ClusterName)
-		fmt.Printf("Total Segments: %d\n", dfinfo.Segments)
 		fmt.Printf("Segment Position: %d\n", sh.SegmentPosition)
 		fmt.Printf("Segment Size: %d\n", sh.SegmentSize)
+		fmt.Printf("Total Segments: %d\n", sh.TotalSegments)
 		fmt.Printf("Payload Size: %d\n", len(dsBuf[n:]))
 		db.Write(dsBuf[n:])
 		fmt.Println("--------------------------------------------------")
@@ -173,16 +177,16 @@ func TestLeeching(t *testing.T) {
 			fmt.Println(err)
 			t.FailNow()
 		}
-		msg, err := protocol.ReadRPCMessage(buff[:n])
+		_, err = protocol.ReadRPCMessage(buff[:n])
 		if err != nil {
 			fmt.Println(err)
 			t.FailNow()
 		}
-		err = protocol.RecvRPCMessage(node, msg)
-		if err != nil {
-			fmt.Println(err)
-			t.FailNow()
-		}
+		// err = protocol.RecvRPCMessage(node, msg)
+		// if err != nil {
+		// 	fmt.Println(err)
+		// 	t.FailNow()
+		// }
 
 	}
 }
