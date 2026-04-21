@@ -9,24 +9,34 @@ import (
 
 func TestClientConnection(t *testing.T) {
 
-	addr := net.UDPAddr{IP: []byte("localhost"), Port: 3030}
-	l, err := net.ListenUDP("udp", &addr)
+	raddr, err := net.ResolveUDPAddr("udp", "localhost"+":"+"3030")
+	if err != nil {
+		fmt.Println("Failed to resolve UDPADDr")
+		t.FailNow()
+	}
+	l, err := net.ListenUDP("udp", raddr)
 	if err != nil {
 		fmt.Println("Failed to create udp listener")
 		t.FailNow()
 	}
 	msg := protocol.RPCMsg{
-		Method: protocol.PING,
-		RPCType: protocol.CALL,
-		StatusCode: 0,
-		Message: "Ni hao",
+		Method:      protocol.PING,
+		RPCType:     protocol.CALL,
+		StatusCode:  0,
+		Message:     "Ni hao",
 		PayloadSize: 0,
 	}
-	b,err:= protocol.WrapPayloadToBuffer(msg,nil)
+	b, err := protocol.WrapPayloadToBuffer(msg, nil)
 
 	if err != nil {
-		fmt.Println("Failed to create udp listener")
-		t.FailNow()}
-	protocol.SendMsg(l,,protocol.NodeAddr{})
+		fmt.Println("Failed to wrap message")
+		t.FailNow()
+	}
+	err = protocol.SendMsg(l, b, protocol.NodeAddr{Port: 5656, IP: []byte("localhost")})
+	if err != nil {
+
+		fmt.Println("Failed to send udp message")
+		t.FailNow()
+	}
 
 }

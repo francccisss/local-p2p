@@ -532,12 +532,19 @@ func SendMsg(conn *net.UDPConn, message []byte, peerAddr NodeAddr) error {
 
 	fmt.Printf("Sending to: %s\n", ip+":"+port)
 
-	n, err := conn.WriteTo(message, raddr)
+	_, err = conn.WriteTo(message, raddr)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Marshalled: %d\nSent: %d\n", len(message), n)
+	fmt.Printf("Marshalled Size: %d, Prefix Size: %d\n", len(message[4:]), 4)
+	msg := RPCMsg{}
+	err = json.Unmarshal(message[4:], &msg)
+	if err != nil {
+		fmt.Println(err)
+		panic("Unable to unmarshal")
+	}
+	fmt.Printf("Json to be sent: %+v\n", msg)
 
 	return nil
 }
