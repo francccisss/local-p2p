@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -54,7 +55,6 @@ type RPCMsg struct {
 	NodeAddr    NodeAddr
 	NodeID      NodeID
 	Method      Method
-	Payload     []byte
 	PayloadSize uint32
 	StatusCode  StatusCode
 	Message     string
@@ -114,7 +114,7 @@ func ProbeFile(FILE_LOCATION string, cname ClusterName) (StatusCode, FileMetaDat
 // METHODS FOR CREATING A `CALL` RPC MESSAGE
 // -----------------------------------------
 
-func RecvRPCMessage(n *Node, msg RPCMsg) error {
+func RecvRPCMessage(n *Node, msg RPCMsg, payload []byte) error {
 
 	switch msg.RPCType {
 	case CALL: // when peers/nodes send a call RPCType
@@ -123,12 +123,13 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 		fmt.Println("Call Message")
 		// PRELOADING RPC MESSAGE
 		newRPCMsg = RPCMsg{
-			Method:     msg.Method,
-			RPCType:    REPLY,
-			NodeID:     n.NodeID,
-			NodeAddr:   NodeAddr{IP: n.Addr.IP, Port: n.Addr.Port},
-			Message:    "",
-			StatusCode: 0,
+			Method:      msg.Method,
+			RPCType:     REPLY,
+			NodeID:      n.NodeID,
+			NodeAddr:    NodeAddr{IP: n.Addr.IP, Port: n.Addr.Port},
+			Message:     "",
+			StatusCode:  0,
+			PayloadSize: 0,
 		}
 		switch msg.Method {
 		case PING:
@@ -139,7 +140,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			newRPCMsg.StatusCode = SUCCESS
 
 			var incomingPingMsg PingMessage
-			err := json.Unmarshal(msg.Payload, &incomingPingMsg)
+			err := json.Unmarshal(payload, &incomingPingMsg)
 			if err != nil {
 				return err
 			}
@@ -152,7 +153,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 				fmt.Println("Cluster does not exist")
 				newRPCMsg.StatusCode = ERROR
 				newRPCMsg.Message = fmt.Sprintf("Cluster %s does not exist", incomingPingMsg.ClusterName)
-				b, err := WrapMsgToBuffer(newRPCMsg, nil)
+				b, err := WrapPayloadToBuffer(newRPCMsg, nil)
 				err = SendMsg(n.UDPconn, b, msg.NodeAddr)
 				if err != nil {
 					return err
@@ -182,7 +183,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			if err != nil {
 				return err
 			}
-			buff, err := WrapMsgToBuffer(newRPCMsg, b)
+			buff, err := WrapPayloadToBuffer(newRPCMsg, b)
 			if err != nil {
 				return err
 			}
@@ -194,10 +195,10 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			}
 			fmt.Println("Ping")
 		case LEECH:
-			// a call to leech received a single DataSegment
-			// a reply to leech receives an array of DataSegments
+			// a call to leech received a single SegmentHeader
+			// a reply to leech receives an array of SegmentHeaders
 			var fr FileRequest
-			err := json.Unmarshal(msg.Payload, &fr)
+			err := json.Unmarshal(payload, &fr)
 			if err != nil {
 				fmt.Println("Unable to unmarshal data segment")
 				return err
@@ -207,7 +208,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 				fmt.Println("Unable to unmarshal data segment")
 				newRPCMsg.Message = err.Error()
 				newRPCMsg.StatusCode = ERROR
-				buff, err := WrapMsgToBuffer(newRPCMsg, nil)
+				buff, err := WrapPayloadToBuffer(newRPCMsg, nil)
 				if err != nil {
 					fmt.Println("[ERROR]: Unable to send message")
 				}
@@ -221,7 +222,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			if err != nil {
 				return err
 			}
-			b, err := WrapMsgToBuffer(newRPCMsg, buf.Bytes())
+			b, err := WrapPayloadToBuffer(newRPCMsg, buf.Bytes())
 			if err != nil {
 				return err
 			}
@@ -232,14 +233,14 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 
 		case PROBE:
 			newRPCMsg.Method = PROBE
-			cname := string(msg.Payload)
+			cname := string(payload)
 			status, meta, err := ProbeFile(n.FILE_LOCATION, ClusterName(cname))
 
 			if err != nil {
 				fmt.Printf("[PROBE REQUEST]: %s\n", err)
 				newRPCMsg.Message = err.Error()
 				newRPCMsg.StatusCode = status
-				buf, err := WrapMsgToBuffer(newRPCMsg, nil)
+				buf, err := WrapPayloadToBuffer(newRPCMsg, nil)
 				if err != nil {
 					return fmt.Errorf("Unable to send message")
 				}
@@ -255,9 +256,8 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 				return err
 			}
 
-			newRPCMsg.Payload = b
 			newRPCMsg.StatusCode = SUCCESS
-			buf, err := WrapMsgToBuffer(newRPCMsg, b)
+			buf, err := WrapPayloadToBuffer(newRPCMsg, b)
 			if err != nil {
 				return err
 			}
@@ -271,8 +271,8 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 		if msg.StatusCode == ERROR {
 			return fmt.Errorf("%s", msg.Message)
 		}
-		var seg DataSegment
-		err := json.Unmarshal(msg.Payload, &seg)
+		var seg SegmentHeader
+		err := json.Unmarshal(payload, &seg)
 		if err != nil {
 			return err
 		}
@@ -290,8 +290,8 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			if !ok {
 				return fmt.Errorf("NodeID Key does not exist for thread")
 			}
-			var ds DataSegment
-			err := json.Unmarshal(msg.Payload, &ds)
+			var ds SegmentHeader
+			err := json.Unmarshal(payload, &ds)
 			if err != nil {
 				return err
 			}
@@ -333,7 +333,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			}
 			fmt.Printf("Ping received from %s\n", msg.NodeID)
 			var pingMsg PingMessage
-			err := json.Unmarshal(msg.Payload, &pingMsg)
+			err := json.Unmarshal(payload, &pingMsg)
 			if err != nil {
 				return err
 			}
@@ -357,7 +357,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg) error {
 			fmt.Println("Pong")
 		case PROBE:
 			var fileMetaData FileMetaData
-			err := json.Unmarshal(msg.Payload, &fileMetaData)
+			err := json.Unmarshal(payload, &fileMetaData)
 			if err != nil {
 				fmt.Println("Unable to Unmarshal FileMetaData")
 				return err
@@ -400,7 +400,7 @@ func Ping(n *Node, cname ClusterName) error {
 			return err
 		}
 
-		buf, err := WrapMsgToBuffer(newMsg, b)
+		buf, err := WrapPayloadToBuffer(newMsg, b)
 		if err != nil {
 			fmt.Printf("%s", err)
 			continue
@@ -431,7 +431,7 @@ func Probe(n *Node, cname ClusterName) error {
 
 	for _, cp := range c.ClusterPeers {
 
-		buf, err := WrapMsgToBuffer(newMsg, []byte(cname))
+		buf, err := WrapPayloadToBuffer(newMsg, []byte(cname))
 		if err != nil {
 			continue
 		}
@@ -482,7 +482,7 @@ func Leech(n *Node, cname ClusterName, spawnThreads bool, fr FileRequest) error 
 	}
 	for _, p := range c.ClusterPeers {
 
-		buf, err := WrapMsgToBuffer(newMsg, mds)
+		buf, err := WrapPayloadToBuffer(newMsg, mds)
 		if err != nil {
 			continue
 		}
@@ -497,21 +497,24 @@ func Leech(n *Node, cname ClusterName, spawnThreads bool, fr FileRequest) error 
 	return nil
 }
 
-func WrapMsgToBuffer(msg RPCMsg, payload []byte) ([]byte, error) {
+func WrapPayloadToBuffer(msg RPCMsg, payload []byte) ([]byte, error) {
 	b, err := json.Marshal(msg)
 	if err != nil {
 		return nil, err
 	}
 
-	buf := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf, uint32(len(b)))
+	buf := new(bytes.Buffer)
 
-	buf = append(buf, b...)
+	// creates a header for th json metadata
+	binary.Write(buf, binary.LittleEndian, uint32(len(b)))
+	buf.Write(b)
+
+	// appends the payload
 	if payload != nil {
-		buf = append(buf, payload...)
+		buf.Write(payload)
 	}
 
-	return buf, nil
+	return buf.Bytes(), nil
 }
 
 // when sending a message from a CALL rpc type, if the response takes too long, we drop and forget it.

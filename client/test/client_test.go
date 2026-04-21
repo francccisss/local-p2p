@@ -1,73 +1,32 @@
 package test
 
 import (
-	pro "client/protocol"
+	"client/protocol"
 	"fmt"
+	"net"
 	"testing"
 )
 
-type fileData struct {
-	location string
-	hash     pro.ClusterName
-	name     string
-}
+func TestClientConnection(t *testing.T) {
 
-func TestClientPing(t *testing.T) {
-	testPort := 3030
-	testFileData := fileData{hash: "this is the hash of the file"}
-	NeighborBootstrap := []pro.ClusterPeer{
-		pro.ClusterPeer{NodeID: "localhost:5656", Addr: pro.NodeAddr{IP: []byte("localhost"), Port: 5656}},
-		pro.ClusterPeer{NodeID: "localhost:4500", Addr: pro.NodeAddr{IP: []byte("localhost"), Port: 4500}},
-		pro.ClusterPeer{NodeID: "localhost:4269", Addr: pro.NodeAddr{IP: []byte("localhost"), Port: 4269}},
-	}
-	UDPConn, err := pro.InitUDPConn(testPort)
+	addr := net.UDPAddr{IP: []byte("localhost"), Port: 3030}
+	l, err := net.ListenUDP("udp", &addr)
 	if err != nil {
-		fmt.Printf("[TEST ERROR]: %s", err)
+		fmt.Println("Failed to create udp listener")
 		t.FailNow()
 	}
-
-	client := pro.NewNode(
-		UDPConn,
-		pro.NodeAddr{
-			IP:   []byte("localhost"),
-			Port: testPort},
-		"Snicker",
-		"/files/")
-
-	// bootstrap neighbors retrieved from DHT server
-	pro.CreateCluster(client, testFileData.hash)
-
-	c, ok := (*client.ClusterTable)[testFileData.hash]
-	if !ok {
-		fmt.Printf("[TEST ERROR]: unable to find cluster\n")
-		t.FailNow()
+	msg := protocol.RPCMsg{
+		Method: protocol.PING,
+		RPCType: protocol.CALL,
+		StatusCode: 0,
+		Message: "Ni hao",
+		PayloadSize: 0,
 	}
-	for _, n := range NeighborBootstrap {
-		c.ClusterPeers = append(c.ClusterPeers, n)
-	}
-	(*client.ClusterTable)[testFileData.hash] = c
+	b,err:= protocol.WrapPayloadToBuffer(msg,nil)
 
-	err = pro.Ping(client, testFileData.hash)
 	if err != nil {
-		fmt.Printf("[TEST ERROR]: %s", err)
-		t.FailNow()
-	}
+		fmt.Println("Failed to create udp listener")
+		t.FailNow()}
+	protocol.SendMsg(l,,protocol.NodeAddr{})
 
-	for {
-		buf := make([]byte, 2048)
-		n, _, err := client.UDPconn.ReadFromUDP(buf)
-		if err != nil {
-			fmt.Printf("[TEST ERROR]: %s", err)
-			t.FailNow()
-		}
-
-		_, err = pro.ReadRPCMessage(buf[:n])
-
-		// err = pro.RecvRPCMessage(client, msg)
-		//
-		// if err != nil {
-		// 	fmt.Printf("[TEST ERROR]: %s", err)
-		// 	t.FailNow()
-		// }
-	}
 }

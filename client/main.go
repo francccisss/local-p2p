@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"client/protocol"
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -30,64 +33,45 @@ func main() {
 	addr := &net.UDPAddr{IP: ip, Port: port}
 
 	UDPConn, err := net.ListenUDP("udp", addr)
-
-	clientNode := protocol.NewNode(
-		UDPConn,
-		protocol.NodeAddr{
-			IP:   addr.IP,
-			Port: addr.Port,
-		},
-		"Receiver",
-		FILE_LOCATION,
-	)
-	// #TODO: Remove this, this is only for testing
-	testFileData := protocol.FileMetaData{Hash: "IosevkaTerm.zip"}
-	protocol.CreateCluster(clientNode, protocol.ClusterName(testFileData.Hash))
-	// #TODO: Remove this, this is only for testing
-
-	// en, _, err := protocol.Checkfile(testFileData.Hash, FILE_LOCATION)
-	// if err != nil {
-	// 	fmt.Println(err)
-	// 	return
-	// }
-	// fmt.Println(en.Name())
-	//
-	// return
 	if err != nil {
 		fmt.Println(err.Error())
 		panic("Shutting down")
 	}
+	defer UDPConn.Close()
 
-	var buffer = make([]byte, 4096)
+	headerLen := 4
+	var metaJsonLen uint32
+	connReader := bufio.NewReader(UDPConn)
+	prefixedBuf := make([]byte, headerLen)
 	for {
-		n, _, err := UDPConn.ReadFromUDP(buffer)
+		_, err := connReader.Read(prefixedBuf)
 		if err != nil {
-			fmt.Println(err.Error())
-			panic("Unable to handle incoming data")
+			panic(err)
 		}
+		metaJsonLen = binary.LittleEndian.Uint32(prefixedBuf)
+		bodyBuf := make([]byte, 1024)
+		jsonBuf := make([]byte, metaJsonLen)
+		for {
+			n, err := connReader.Read(bodyBuf)
+			if err != nil {
+				panic(err)
+			}
 
-		if n < 1 {
-			fmt.Println("Empty")
-			break
-		}
-
-		rpcMsg, err := protocol.ReadRPCMessage(buffer[:n])
-		if err != nil {
-			fmt.Println(err.Error())
-			panic("Unable to handle incoming data")
-		}
-		fmt.Printf("Recevied Data: %+v\n", rpcMsg)
-		fmt.Printf("Body Contents: %s\n", rpcMsg.Payload)
-		err = protocol.RecvRPCMessage(clientNode, rpcMsg)
-
-		if err != nil {
-			fmt.Println(err.Error())
-			panic("Unable to handle incoming data")
+			// using [:n] because old data might stil be present
+			jsonBuf = append(jsonBuf, bodyBuf[:n]...)
+			if n < int(metaJsonLen) {
+				continue
+			}
+			rpc := protocol.RPCMsg{}
+			err = json.Unmarshal(jsonBuf, &rpc)
+			if err != nil {
+				panic(err)
+			}
+			fmt.Printf("Received rpc meta data: %+v\n", rpc)
+			return
 		}
 
 	}
-	fmt.Println("Done")
-
 }
 
 func print_args() {
