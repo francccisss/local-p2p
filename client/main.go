@@ -42,45 +42,109 @@ func main() {
 	connReader := bufio.NewReader(UDPConn)
 
 	// read prefix header first
-	var prefixedBuf []byte = make([]byte, 4)
-	n, err := connReader.Read(prefixedBuf)
-	if err != nil {
-		fmt.Println("Failed to read data to prefixedBuf")
-		panic(err)
-	}
-	fmt.Printf("What is n: %d\n", n)
-	fmt.Printf("What is prefix value: %d\n", prefixedBuf[:n])
-	var metaJsonLen uint32 = binary.LittleEndian.Uint32(prefixedBuf[:n])
-	fmt.Printf("Length of meta json received: %d\n", metaJsonLen)
-	fmt.Println("Discarded 4 bytes from prefix header")
-	// read header first
-
-	bodyBuf := make([]byte, metaJsonLen)
-	jsonBuf := make([]byte, 0, metaJsonLen)
-	total := 0
+	bodyBuf := make([]byte, 4096)
+	var mr MessageReader
+	mr.readBuffer = make([]byte, 4096)
+	mr.payloadBuffer = make([]byte, 4096)
 	for {
 		n, err := connReader.Read(bodyBuf)
 		if err != nil {
 			fmt.Println("Failed to read data to bodybuf")
 			panic(err)
 		}
-
-		jsonBuf = append(jsonBuf, bodyBuf[:n]...)
-		if len(jsonBuf) < int(metaJsonLen) {
-			continue
+		_, _, err = mr.ExtractMessage(bodyBuf[:n])
+		if err != nil {
+			fmt.Println("Failed to extract message")
+			panic(err)
 		}
-		break
+		if mr.state == DONE {
+			fmt.Println("Process rpc message and payload")
+			// go protocol.RecvRPCMessage()
+		}
 	}
 
-	fmt.Printf("meta json bytes total received: %d, currently read: %d\n", total, n)
-	fmt.Printf("meta json buff len: %d\n", len(jsonBuf))
-	rpc := protocol.RPCMsg{}
-	err = json.Unmarshal(jsonBuf, &rpc)
-	if err != nil {
-		fmt.Println("Failed to Unmarshal json")
-		panic(err)
+}
+
+type PHASE int
+
+const (
+	PREFIX PHASE = iota
+	META_JSON
+	PAYLOAD
+)
+
+type MessageReaderState int
+
+const (
+	DONE MessageReaderState = iota
+	PROCESSING
+)
+
+type MessageReader struct {
+	payloadBuffer      []byte
+	readBuffer         []byte
+	metaJson           protocol.RPCMsg
+	currentPayloadSize int
+	phaseDelim         int // is the previous block of bytes used for previous phase
+	metaJsonSize       int
+	phase              PHASE
+	state              MessageReaderState
+}
+type Payload []byte
+
+func (mr *MessageReader) ExtractMessage(buffer []byte) (protocol.RPCMsg, Payload, error) {
+	// Payload could exceed the buffer size set outside the function
+	// so if the remaining buffer < payload size needed from the first arrival of the bytes message
+	// in the socket (which is already handled in case PAYLOAD)
+	// this conditional phasement continues the loop by accumulating the incoming bytes
+	// from the buffer of the current message
+	fmt.Printf("Total buffer size read: %d\n", len(buffer))
+	if mr.phase == PAYLOAD {
+		mr.currentPayloadSize += len(buffer)
+		fmt.Printf("Extracted: %d bytes, Needed: %d", mr.currentPayloadSize, mr.metaJson.PayloadSize)
+		if mr.currentPayloadSize < int(mr.metaJson.PayloadSize) {
+			return mr.metaJson, nil, nil
+		}
+		mr.phase = PREFIX
+		mr.state = DONE
+		return mr.metaJson, mr.payloadBuffer, nil
 	}
-	fmt.Printf("Received rpc meta data: %+v\n", rpc)
+
+	for {
+		switch mr.phase {
+		case PREFIX:
+			fmt.Println("Prefix Phase")
+			mr.metaJsonSize = int(binary.LittleEndian.Uint32(buffer[:protocol.PREFIX_HEADER_SIZE]))
+			fmt.Printf("[PREFIX PHASE]: Meta Json length: %d\n", mr.metaJsonSize)
+			mr.phaseDelim = protocol.PREFIX_HEADER_SIZE
+			mr.phase = META_JSON
+		case META_JSON:
+			fmt.Println("Meta json Phase")
+
+			fmt.Printf("[META PHASE]: Meta json content buffer size: %d\n", len(buffer[mr.phaseDelim:mr.phaseDelim+mr.metaJsonSize]))
+			err := json.Unmarshal(buffer[mr.phaseDelim:mr.phaseDelim+mr.metaJsonSize], &mr.metaJson)
+			if err != nil {
+				fmt.Println("[META PHASE]: Unable to unmarshal meta data json")
+				return mr.metaJson, nil, err
+			}
+			fmt.Printf("Meta data received %+v\n", mr.metaJson)
+			mr.phase = PAYLOAD
+			mr.phaseDelim = mr.metaJsonSize
+		case PAYLOAD:
+			fmt.Println("Payload Phase")
+			payloadSectionRemaining := len(buffer[mr.phaseDelim:])
+			mr.payloadBuffer = append(mr.payloadBuffer, buffer[mr.phaseDelim:payloadSectionRemaining]...)
+			mr.currentPayloadSize += payloadSectionRemaining
+			fmt.Printf("Extracted: %d bytes after meta json", mr.currentPayloadSize)
+			if mr.currentPayloadSize < int(mr.metaJson.PayloadSize) {
+				return mr.metaJson, nil, nil
+			}
+			mr.phase = PREFIX
+			mr.state = DONE
+			return mr.metaJson, mr.payloadBuffer, nil
+		}
+
+	}
 }
 
 func print_args() {
