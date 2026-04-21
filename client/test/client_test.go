@@ -2,6 +2,7 @@ package test
 
 import (
 	"client/protocol"
+	"encoding/json"
 	"fmt"
 	"net"
 	"testing"
@@ -26,15 +27,22 @@ func TestClientConnection(t *testing.T) {
 		Message:     "Ni hao",
 		PayloadSize: 0,
 	}
-	b, err := protocol.WrapPayloadToBuffer(msg, nil)
-
+	pngMsg := protocol.PingMessage{
+		Status:      protocol.IDLE,
+		ClusterName: "cluster",
+	}
+	pngBuf, err := json.Marshal(pngMsg)
 	if err != nil {
-		fmt.Println("Failed to wrap message")
+		fmt.Println(err)
 		t.FailNow()
 	}
-	err = protocol.SendMsg(l, b, protocol.NodeAddr{Port: 5656, IP: []byte("localhost")})
+	buf, err := protocol.WrapPayloadToBuffer(msg, pngBuf)
 	if err != nil {
-
+		fmt.Println(err)
+		t.FailNow()
+	}
+	err = protocol.SendMsg(l, buf, protocol.NodeAddr{Port: 5656, IP: []byte("localhost")})
+	if err != nil {
 		fmt.Println("Failed to send udp message")
 		t.FailNow()
 	}

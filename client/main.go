@@ -39,48 +39,48 @@ func main() {
 	}
 	defer UDPConn.Close()
 
-	headerLen := 4
-	var metaJsonLen uint32
 	connReader := bufio.NewReader(UDPConn)
-	prefixedBuf := make([]byte, headerLen)
+
+	// read prefix header first
+	var prefixedBuf []byte = make([]byte, 4)
+	n, err := connReader.Read(prefixedBuf)
+	if err != nil {
+		fmt.Println("Failed to read data to prefixedBuf")
+		panic(err)
+	}
+	fmt.Printf("What is n: %d\n", n)
+	fmt.Printf("What is prefix value: %d\n", prefixedBuf[:n])
+	var metaJsonLen uint32 = binary.LittleEndian.Uint32(prefixedBuf[:n])
+	fmt.Printf("Length of meta json received: %d\n", metaJsonLen)
+	fmt.Println("Discarded 4 bytes from prefix header")
+	// read header first
+
+	bodyBuf := make([]byte, metaJsonLen)
+	jsonBuf := make([]byte, 0, metaJsonLen)
+	total := 0
 	for {
-		_, err := connReader.Read(prefixedBuf)
+		n, err := connReader.Read(bodyBuf)
 		if err != nil {
-			fmt.Println("Failed to read data to prefixedBuf")
+			fmt.Println("Failed to read data to bodybuf")
 			panic(err)
 		}
-		metaJsonLen = binary.LittleEndian.Uint32(prefixedBuf)
-		fmt.Printf("Length of meta json received: %d\n", metaJsonLen)
-		fmt.Println("Discarded 4 bytes from prefix header")
-		bodyBuf := make([]byte, 10)
-		jsonBuf := make([]byte, 0)
-		total := 0
-		for {
-			n, err := connReader.Read(bodyBuf)
-			if err != nil {
-				fmt.Println("Failed to read data to bodybuf")
-				panic(err)
-			}
 
-			// using [:n] because old data might stil be present
-			jsonBuf = append(jsonBuf, bodyBuf[:n]...)
-			total += n
-			fmt.Printf("meta json bytes total received: %d, currently read: %d\n", total, n)
-			fmt.Printf("meta json buff len: %d\n", len(jsonBuf))
-			if total < int(metaJsonLen) {
-				continue
-			}
-			rpc := protocol.RPCMsg{}
-			err = json.Unmarshal(jsonBuf, &rpc)
-			if err != nil {
-				fmt.Println("Failed to Unmarshal json")
-				panic(err)
-			}
-			fmt.Printf("Received rpc meta data: %+v\n", rpc)
-			return
+		jsonBuf = append(jsonBuf, bodyBuf[:n]...)
+		if len(jsonBuf) < int(metaJsonLen) {
+			continue
 		}
-
+		break
 	}
+
+	fmt.Printf("meta json bytes total received: %d, currently read: %d\n", total, n)
+	fmt.Printf("meta json buff len: %d\n", len(jsonBuf))
+	rpc := protocol.RPCMsg{}
+	err = json.Unmarshal(jsonBuf, &rpc)
+	if err != nil {
+		fmt.Println("Failed to Unmarshal json")
+		panic(err)
+	}
+	fmt.Printf("Received rpc meta data: %+v\n", rpc)
 }
 
 func print_args() {

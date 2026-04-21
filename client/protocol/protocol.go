@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -20,6 +19,7 @@ const (
 	LEECH
 	PROBE
 )
+const PREFIX_HEADER_SIZE = 4
 
 // Node can implement client connection interface
 // this interface describes the characteristics of
@@ -456,8 +456,9 @@ func Leech(n *Node, cname ClusterName, spawnThreads bool, fr FileRequest) error 
 
 	if spawnThreads {
 		var wg sync.WaitGroup
-		ctx, _ := context.WithTimeout(context.Background(), time.Second*120)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
 		fmt.Println("[LEECH REQUEST]: Preparing Cluster Peer Threads for Byte Measurement")
+		defer cancel()
 
 		for _, p := range c.ClusterPeers {
 			wg.Go(func() {
@@ -503,18 +504,21 @@ func WrapPayloadToBuffer(msg RPCMsg, payload []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	buf := new(bytes.Buffer)
+	buf := make([]byte, PREFIX_HEADER_SIZE, len(b)+PREFIX_HEADER_SIZE)
+	fmt.Printf("meta json size: %d\n", len(b))
 
 	// creates a header for th json metadata
-	binary.Write(buf, binary.LittleEndian, uint32(len(b)))
-	buf.Write(b)
+	binary.LittleEndian.PutUint32(buf, uint32(len(b)))
 
-	// appends the payload
+	// appends marshaled json after getting len
+	buf = append(buf, b...)
 	if payload != nil {
-		buf.Write(payload)
+		// appends the payload
+		buf = append(buf, payload...)
+		fmt.Printf("payload size: %d\n", len(payload))
 	}
 
-	return buf.Bytes(), nil
+	return buf, nil
 }
 
 // when sending a message from a CALL rpc type, if the response takes too long, we drop and forget it.
@@ -537,14 +541,7 @@ func SendMsg(conn *net.UDPConn, message []byte, peerAddr NodeAddr) error {
 		return err
 	}
 
-	fmt.Printf("Marshalled Size: %d, Prefix Size: %d\n", len(message[4:]), 4)
-	msg := RPCMsg{}
-	err = json.Unmarshal(message[4:], &msg)
-	if err != nil {
-		fmt.Println(err)
-		panic("Unable to unmarshal")
-	}
-	fmt.Printf("Json to be sent: %+v\n", msg)
+	fmt.Printf("Marshalled Size: %d including payload, Prefix Header Size: %d\nTotal Size: %d", len(message[PREFIX_HEADER_SIZE:]), PREFIX_HEADER_SIZE, len(message))
 
 	return nil
 }
