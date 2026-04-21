@@ -20,13 +20,6 @@ func TestClientConnection(t *testing.T) {
 		fmt.Println("Failed to create udp listener")
 		t.FailNow()
 	}
-	msg := protocol.RPCMsg{
-		Method:      protocol.PING,
-		RPCType:     protocol.CALL,
-		StatusCode:  0,
-		Message:     "Ni hao",
-		PayloadSize: 0,
-	}
 	pngMsg := protocol.PingMessage{
 		Status:      protocol.IDLE,
 		ClusterName: "cluster",
@@ -35,6 +28,14 @@ func TestClientConnection(t *testing.T) {
 	if err != nil {
 		fmt.Println(err)
 		t.FailNow()
+	}
+
+	msg := protocol.RPCMsg{
+		Method:      protocol.PING,
+		RPCType:     protocol.CALL,
+		StatusCode:  0,
+		Message:     "Ni hao",
+		PayloadSize: uint32(len(pngBuf)),
 	}
 	buf, err := protocol.WrapPayloadToBuffer(msg, pngBuf)
 	if err != nil {

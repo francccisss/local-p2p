@@ -52,13 +52,16 @@ func main() {
 			fmt.Println("Failed to read data to bodybuf")
 			panic(err)
 		}
-		_, _, err = mr.ExtractMessage(bodyBuf[:n])
+		_, pl, err := mr.ExtractMessage(bodyBuf[:n])
 		if err != nil {
 			fmt.Println("Failed to extract message")
 			panic(err)
 		}
 		if mr.state == DONE {
 			fmt.Println("Process rpc message and payload")
+			fmt.Printf("Payload contains: %s", pl)
+
+			// #TODO: Handle payload and rpc message for methods
 			// go protocol.RecvRPCMessage()
 		}
 	}
@@ -129,18 +132,21 @@ func (mr *MessageReader) ExtractMessage(buffer []byte) (protocol.RPCMsg, Payload
 			}
 			fmt.Printf("Meta data received %+v\n", mr.metaJson)
 			mr.phase = PAYLOAD
-			mr.phaseDelim = mr.metaJsonSize
+			mr.phaseDelim += mr.metaJsonSize
 		case PAYLOAD:
 			fmt.Println("Payload Phase")
 			payloadSectionRemaining := len(buffer[mr.phaseDelim:])
-			mr.payloadBuffer = append(mr.payloadBuffer, buffer[mr.phaseDelim:payloadSectionRemaining]...)
+			mr.payloadBuffer = append(mr.payloadBuffer, buffer[mr.phaseDelim:]...)
 			mr.currentPayloadSize += payloadSectionRemaining
-			fmt.Printf("Extracted: %d bytes after meta json", mr.currentPayloadSize)
+			mr.state = PROCESSING
+			fmt.Printf("Extracted: %d bytes after meta json\n", mr.currentPayloadSize)
 			if mr.currentPayloadSize < int(mr.metaJson.PayloadSize) {
 				return mr.metaJson, nil, nil
 			}
+			fmt.Println("First arrival fits buffer setting phase and state to default")
 			mr.phase = PREFIX
 			mr.state = DONE
+
 			return mr.metaJson, mr.payloadBuffer, nil
 		}
 
