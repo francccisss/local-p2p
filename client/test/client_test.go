@@ -37,6 +37,8 @@ func TestClientConnection(t *testing.T) {
 		Message:     "Ni hao",
 		PayloadSize: uint32(len(pngBuf)),
 	}
+
+	fmt.Printf("Payload size: %d\n", len(pngBuf))
 	buf, err := protocol.WrapPayloadToBuffer(msg, pngBuf)
 	if err != nil {
 		fmt.Println(err)
