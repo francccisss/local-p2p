@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"client/protocol"
 	"encoding/binary"
 	"encoding/json"
@@ -9,6 +8,8 @@ import (
 	"net"
 	"os"
 	"strconv"
+
+	"github.com/google/uuid"
 )
 
 type PHASE int
@@ -56,53 +57,67 @@ func main() {
 		panic("Shutting down")
 	}
 
-	addr := &net.UDPAddr{IP: ip, Port: port}
+	addr := &net.TCPAddr{IP: ip, Port: port}
 
-	UDPConn, err := net.ListenUDP("udp", addr)
+	l, err := net.Listen("tcp", ":5656")
 	if err != nil {
 		fmt.Println(err.Error())
 		panic("Shutting down")
 	}
-	defer UDPConn.Close()
+	defer l.Close()
+	nodeID, err := uuid.NewUUID()
+	if err != nil {
+		panic(err)
+	}
 
-	connReader := bufio.NewReader(UDPConn)
+	node := protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: addr.Port}, protocol.NodeID(nodeID.String()), FILE_LOCATION)
 
 	// read prefix header first
-	bodyBuf := make([]byte, 4)
+	bodyBuf := make([]byte, 10)
 	var mr MessageReader = MessageReader{
 		payloadBuffer: make([]byte, 0, 4096),
 		jsonBuffer:    make([]byte, 0, 4096),
 		state:         PROCESSING,
 	}
+
 	for {
-		n, err := connReader.Read(bodyBuf)
+		conn, err := l.Accept()
 		if err != nil {
 			fmt.Println("Failed to read data to bodybuf")
 			panic(err)
 		}
-		header, pl, err := mr.ExtractMessage(bodyBuf[:n])
-		if err != nil {
-			fmt.Println("Failed to extract message")
-			fmt.Printf("ERROR: %s\n", err)
-			mr = MessageReader{}
-			continue
-		}
-		if mr.state == DONE {
-			fmt.Println("Process rpc message and payload")
-			fmt.Printf("Header extracted %+v\n", header)
-
-			// #TODO: Handle payload and rpc message for methods
-			// go func() {
-			// 	err := protocol.RecvRPCMessage(nil, header, pl)
-			// 	if err != nil {
-			// 		fmt.Println(err)
-			// 	}
-			// }()
-			fmt.Printf("Payload Message: %s\n", pl)
-		}
+		go func() {
+			fmt.Printf("Received TCP Connection: %+v\n", conn)
+			for {
+				n, err := conn.Read(bodyBuf)
+				if err != nil {
+					fmt.Println("Failed to read data to bodybuf")
+					panic(err)
+				}
+				header, pl, err := mr.ExtractMessage(bodyBuf[:n])
+				if err != nil {
+					fmt.Println("Failed to extract message")
+					fmt.Printf("ERROR: %s\n", err)
+					mr = MessageReader{}
+					continue
+				}
+				if mr.state == DONE {
+					fmt.Println("Process rpc message and payload")
+					fmt.Printf("Header extracted %+v\n", header)
+					go func() {
+						err := protocol.RecvRPCMessage(node, header, pl)
+						if err != nil {
+							fmt.Println(err)
+						}
+					}()
+				}
+			}
+		}()
 	}
 
 }
+
+func handleConn() {}
 
 func (mr *MessageReader) ExtractMessage(buffer []byte) (protocol.RPCMsg, Payload, error) {
 
@@ -118,19 +133,6 @@ func (mr *MessageReader) ExtractMessage(buffer []byte) (protocol.RPCMsg, Payload
 			fmt.Printf("left in buffer: %d\n", len(buffer))
 		case META_JSON:
 			fmt.Printf("Meta Json Phase: %d\n", mr.metaJsonSize)
-			// NOTE: when a buffer is less than total json size, then this function
-			// needs to be called multiple times until the jsonBuffer == jsonSize
-			// but at the last fragment the remaining will be < buffer size
-			// so we need to be able to only grab the remaining bytes from Buffer for jsonBuffer,
-			// so len(buffer) > remaining, then buffer[:remaining]
-			// also a case were the len(buffer) < remaining, then append all bytes from buffer
-			// to jsonBuffer, then return BUT only return when jsonBuffer is still < jsonSize
-			// AFTER appending the bytes from buffer to jsonBuffer.
-			// else if it is so that len(jsonBuffer) == metaJsonSize is true, then we do nothing and proceed
-			// IF the latter case happens then we've already read the available bytes from the buffer
-			// so we can say that the delimeter would be from prefixheader + metaJsonSize.
-			// ELSE IF the former case happens where there are excess bytes from buffer after reading
-			// UP TO the remaining bytes `buffer[:remaining]` then we need to read from phaseDelim
 			remaining := mr.metaJsonSize - len(mr.jsonBuffer) // making sure we dont overextend to the payload sectionA
 			if len(buffer) < remaining {
 				mr.jsonBuffer = append(mr.jsonBuffer, buffer...)

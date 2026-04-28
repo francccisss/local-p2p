@@ -154,7 +154,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg, payload []byte) error {
 				newRPCMsg.StatusCode = ERROR
 				newRPCMsg.Message = fmt.Sprintf("Cluster %s does not exist", incomingPingMsg.ClusterName)
 				b, err := WrapPayloadToBuffer(newRPCMsg, nil)
-				err = SendMsg(n.UDPconn, b, msg.NodeAddr)
+				err = SendMsg(b, msg.NodeAddr)
 				if err != nil {
 					return err
 				}
@@ -187,7 +187,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg, payload []byte) error {
 			if err != nil {
 				return err
 			}
-			err = SendMsg(n.UDPconn, buff, msg.NodeAddr)
+			err = SendMsg(buff, msg.NodeAddr)
 
 			if err != nil {
 				fmt.Println("Unable to respond to ping")
@@ -212,7 +212,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg, payload []byte) error {
 				if err != nil {
 					fmt.Println("[ERROR]: Unable to send message")
 				}
-				msgErr := SendMsg(n.UDPconn, buff, msg.NodeAddr)
+				msgErr := SendMsg(buff, msg.NodeAddr)
 				if msgErr != nil {
 					fmt.Println("[ERROR]: Unable to send message")
 				}
@@ -226,7 +226,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg, payload []byte) error {
 			if err != nil {
 				return err
 			}
-			err = SendMsg(n.UDPconn, b, msg.NodeAddr)
+			err = SendMsg(b, msg.NodeAddr)
 			if err != nil {
 				return err
 			}
@@ -244,7 +244,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg, payload []byte) error {
 				if err != nil {
 					return fmt.Errorf("Unable to send message")
 				}
-				err = SendMsg(n.UDPconn, buf, msg.NodeAddr)
+				err = SendMsg(buf, msg.NodeAddr)
 				if err != nil {
 					return fmt.Errorf("Unable to send message")
 				}
@@ -261,7 +261,7 @@ func RecvRPCMessage(n *Node, msg RPCMsg, payload []byte) error {
 			if err != nil {
 				return err
 			}
-			err = SendMsg(n.UDPconn, buf, msg.NodeAddr)
+			err = SendMsg(buf, msg.NodeAddr)
 			if err != nil {
 				return err
 			}
@@ -405,7 +405,7 @@ func Ping(n *Node, cname ClusterName) error {
 			fmt.Printf("%s", err)
 			continue
 		}
-		err = SendMsg(n.UDPconn, buf, p.Addr)
+		err = SendMsg(buf, p.Addr)
 		if err != nil {
 			fmt.Printf("%s", err)
 			continue
@@ -435,7 +435,7 @@ func Probe(n *Node, cname ClusterName) error {
 		if err != nil {
 			continue
 		}
-		err = SendMsg(n.UDPconn, buf, cp.Addr)
+		err = SendMsg(buf, cp.Addr)
 		if err != nil {
 			continue
 		}
@@ -487,7 +487,7 @@ func Leech(n *Node, cname ClusterName, spawnThreads bool, fr FileRequest) error 
 		if err != nil {
 			continue
 		}
-		err = SendMsg(n.UDPconn, buf, p.Addr)
+		err = SendMsg(buf, p.Addr)
 		if err != nil {
 			continue
 		}
@@ -523,20 +523,19 @@ func WrapPayloadToBuffer(msg RPCMsg, payload []byte) ([]byte, error) {
 
 // when sending a message from a CALL rpc type, if the response takes too long, we drop and forget it.
 // and consider that peer as offline
-func SendMsg(conn *net.UDPConn, message []byte, peerAddr NodeAddr) error {
+func SendMsg(message []byte, peerAddr NodeAddr) error {
 	ip := string(peerAddr.IP)
 	port := strconv.Itoa(peerAddr.Port)
-	raddr, err := net.ResolveUDPAddr("udp", ip+":"+port)
+	// first byte size of json meta data
+
+	conn, err := net.Dial("tcp", string(peerAddr.IP)+":"+strconv.Itoa(peerAddr.Port))
 
 	if err != nil {
 		return err
 	}
-
-	// first byte size of json meta data
-
 	fmt.Printf("Sending to: %s\n", ip+":"+port)
 
-	_, err = conn.WriteTo(message, raddr)
+	_, err = conn.Write(message)
 	if err != nil {
 		return err
 	}
