@@ -28,10 +28,9 @@ const (
 
 type MessageReader struct {
 	payloadBuffer []byte
-	readBuffer    []byte
+	jsonBuffer    []byte
 	metaJson      protocol.RPCMsg
 	payloadSize   int
-	phaseDelim    int // is the previous block of bytes used for previous phase
 	metaJsonSize  int
 	phase         PHASE
 	state         MessageReaderState
@@ -69,10 +68,10 @@ func main() {
 	connReader := bufio.NewReader(UDPConn)
 
 	// read prefix header first
-	bodyBuf := make([]byte, 1024)
+	bodyBuf := make([]byte, 4)
 	var mr MessageReader = MessageReader{
 		payloadBuffer: make([]byte, 0, 4096),
-		readBuffer:    make([]byte, 0, 4096),
+		jsonBuffer:    make([]byte, 0, 4096),
 		state:         PROCESSING,
 	}
 	for {
@@ -91,7 +90,6 @@ func main() {
 		if mr.state == DONE {
 			fmt.Println("Process rpc message and payload")
 			fmt.Printf("Header extracted %+v\n", header)
-			fmt.Printf("Payload contains: %s", pl)
 
 			// #TODO: Handle payload and rpc message for methods
 			// go func() {
@@ -114,32 +112,45 @@ func (mr *MessageReader) ExtractMessage(buffer []byte) (protocol.RPCMsg, Payload
 			fmt.Println("Prefix Phase")
 			mr.metaJsonSize = int(binary.LittleEndian.Uint32(buffer[:protocol.PREFIX_HEADER_SIZE]))
 			fmt.Printf("[PREFIX PHASE]: Meta Json length: %d\n", mr.metaJsonSize)
-			mr.phaseDelim = protocol.PREFIX_HEADER_SIZE
 			mr.phase = META_JSON
 
-			buffer = buffer[mr.phaseDelim:]
+			buffer = buffer[protocol.PREFIX_HEADER_SIZE:]
+			fmt.Printf("left in buffer: %d\n", len(buffer))
 		case META_JSON:
 			fmt.Printf("Meta Json Phase: %d\n", mr.metaJsonSize)
-			// the payload will read the readBuffer if it doesnt fit then
-			// get the rest from the buffer argument on the if statements
-
-			if len(buffer) < mr.metaJsonSize {
-				remaining := mr.metaJsonSize - len(mr.readBuffer) // making sure we dont overextend to the payload section
-				if remaining > 0 {
-					fmt.Printf("Remaining Meta json bytes: %d, delivered: %d\n", remaining, len(buffer))
-					// looks for the minimum value between remaining window and the received buffer
-					// exceeding buffersize access
-					minValue := min(remaining, len(buffer))
-					fmt.Printf("Min value: %d\n", minValue)
-					mr.readBuffer = append(mr.readBuffer, buffer[:minValue]...) // ga subra ko index tungod sa buffer access
+			// NOTE: when a buffer is less than total json size, then this function
+			// needs to be called multiple times until the jsonBuffer == jsonSize
+			// but at the last fragment the remaining will be < buffer size
+			// so we need to be able to only grab the remaining bytes from Buffer for jsonBuffer,
+			// so len(buffer) > remaining, then buffer[:remaining]
+			// also a case were the len(buffer) < remaining, then append all bytes from buffer
+			// to jsonBuffer, then return BUT only return when jsonBuffer is still < jsonSize
+			// AFTER appending the bytes from buffer to jsonBuffer.
+			// else if it is so that len(jsonBuffer) == metaJsonSize is true, then we do nothing and proceed
+			// IF the latter case happens then we've already read the available bytes from the buffer
+			// so we can say that the delimeter would be from prefixheader + metaJsonSize.
+			// ELSE IF the former case happens where there are excess bytes from buffer after reading
+			// UP TO the remaining bytes `buffer[:remaining]` then we need to read from phaseDelim
+			remaining := mr.metaJsonSize - len(mr.jsonBuffer) // making sure we dont overextend to the payload sectionA
+			if len(buffer) < remaining {
+				mr.jsonBuffer = append(mr.jsonBuffer, buffer...)
+				if len(mr.jsonBuffer) < mr.metaJsonSize {
+					fmt.Printf("Meta json: rem-%d, Delivered/read%d\n", remaining, len(buffer))
 					return mr.metaJson, nil, nil
 				}
+				fmt.Printf("Meta json: rem-%d, Delivered/read%d\n", remaining, len(buffer))
+				buffer = buffer[len(buffer):] // push index to end
 			} else {
-				mr.readBuffer = append(mr.readBuffer, buffer[:mr.metaJsonSize]...) // ga subra ko index tungod sa buffer access
+				// NOTE: This leaves extra bytes for the next phase
+				mr.jsonBuffer = append(mr.jsonBuffer, buffer[:remaining]...) // ga subra ko index tungod sa buffer access
+
+				fmt.Printf("Meta json: rem-%d, Delivered/read%d\n", remaining, len(buffer))
+				fmt.Printf("Rem in Buffer After :%d\n", len(buffer[remaining:]))
+				buffer = buffer[remaining:]
 			}
-			fmt.Printf("Read Buffer Len: %d\n", len(mr.readBuffer))
+			fmt.Printf("Read Buffer Len: %d\n", len(mr.jsonBuffer))
 			fmt.Printf("[META PHASE]: Meta json content buffer size: %d\n", mr.metaJsonSize)
-			err := json.Unmarshal(mr.readBuffer, &mr.metaJson)
+			err := json.Unmarshal(mr.jsonBuffer, &mr.metaJson)
 			if err != nil {
 				fmt.Println("[META PHASE]: Unable to unmarshal meta data json")
 				return mr.metaJson, nil, err
@@ -147,30 +158,27 @@ func (mr *MessageReader) ExtractMessage(buffer []byte) (protocol.RPCMsg, Payload
 			fmt.Printf("Meta data received %+v\n", mr.metaJson)
 			mr.payloadSize = int(mr.metaJson.PayloadSize)
 			mr.phase = PAYLOAD
-			mr.phaseDelim += mr.metaJsonSize
-			// updating this for the sequential transition between phases
-			// so that the next phase does not need to read from mr.phaseDelim
-			buffer = buffer[mr.phaseDelim:]
-		case PAYLOAD:
-			fmt.Printf("DIPOTA: len %d, str: %s\n", len(buffer), buffer)
-			fmt.Printf("Payload Phase: %d\n", mr.payloadSize)
 
-			if len(buffer) < mr.payloadSize {
-				remaining := mr.payloadSize - len(mr.payloadBuffer)
-				minValue := min(remaining, len(buffer))
+			fmt.Printf("Buffer len for next phase: %d\n", len(buffer))
+
+			fmt.Printf("Bytes left to read: %d\n", (mr.metaJsonSize+protocol.PREFIX_HEADER_SIZE+mr.payloadSize)-(mr.metaJsonSize+protocol.PREFIX_HEADER_SIZE))
+		case PAYLOAD:
+
+			remaining := mr.payloadSize - len(mr.payloadBuffer)
+			if len(buffer) < remaining {
 				fmt.Printf("Remaining bytes from payload: %d, received: %d\n", remaining, len(buffer))
-				if remaining > 0 {
-					mr.payloadBuffer = append(mr.payloadBuffer, buffer[:minValue]...)
+				mr.payloadBuffer = append(mr.payloadBuffer, buffer...)
+				// guard
+				fmt.Printf("Remaining: %d, IN: %d\n", remaining, len(mr.payloadBuffer))
+				if len(mr.payloadBuffer) < mr.payloadSize {
 					return mr.metaJson, nil, nil
 				}
-
 			} else {
-				mr.payloadBuffer = append(mr.payloadBuffer, buffer[:mr.payloadSize]...)
+				mr.payloadBuffer = append(mr.payloadBuffer, buffer[:remaining]...)
 			}
 
 			mr.phase = PREFIX
 			mr.state = DONE
-			mr.phaseDelim = 0
 			mr.payloadSize = 0
 			return mr.metaJson, mr.payloadBuffer, nil
 		}
