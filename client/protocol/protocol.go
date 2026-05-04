@@ -13,6 +13,7 @@ import (
 )
 
 type Method int
+type MethodString string
 
 const (
 	PING Method = iota
@@ -21,6 +22,15 @@ const (
 	JOIN
 	FIND_CLUSTER
 )
+
+var MethodStringMap = map[Method]MethodString{
+	0: "PING",
+	1: "LEECH",
+	2: "PROBE",
+	3: "JOIN",
+	4: "FIND CLUSTER",
+}
+
 const PREFIX_HEADER_SIZE = 4
 
 // Node can implement client connection interface
@@ -68,10 +78,18 @@ type ClusterResponse struct {
 	Peers []ClusterPeer
 }
 
-type PingResponse struct {
-	Status PeerStatus
-	ClusterName
+type NodeStatus string
+type NodeStatusEnum int
+
+const (
+	ACTIVE NodeStatusEnum = iota
+)
+
+var NodeStatusMap = map[NodeStatusEnum]NodeStatus{
+	0: "ACTIVE",
 }
+
+type PingResponse NodeStatus
 type PingRequest string
 
 // buffer is the payload received from a peer
@@ -191,15 +209,20 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte) error {
 			// sender triggers a ping on receiver(this)
 			// receiver sends their NodeID in return
 			// so that the sender can keep track of the receivers
-			newRPCMsg.Method = PING
 			newRPCMsg.StatusCode = SUCCESS
+			newRPCMsg.Message = "Pong"
+			pr := PingRequest(payload)
+			fmt.Printf("[CALL]: PING - pinged by neighboring node %s\n", pr)
+			var newPingResponse PingResponse = PingResponse(NodeStatusMap[ACTIVE]) // interesting unnessary type assertion
 
-			var incomingPingMsg PingMessage
-			err := json.Unmarshal(payload, &incomingPingMsg)
+			b, err := WrapPayloadToBuffer(newRPCMsg, []byte(newPingResponse))
 			if err != nil {
-				return err
+				return protocolErrorWrap(err.Error(), CALL, PING)
 			}
-
+			err = n.SendMsg(b, msg.NodeAddr)
+			if err != nil {
+				return protocolErrorWrap(err.Error(), CALL, PING)
+			}
 			fmt.Println("Ping")
 		case LEECH:
 			// a call to leech received a single SegmentHeader
@@ -358,31 +381,11 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte) error {
 			// with the receiver's NodeID that it send from PING
 
 			if msg.StatusCode == ERROR {
-				return fmt.Errorf("%s", msg.Message)
+				return protocolErrorWrap(msg.Message, REPLY, PING)
 			}
 			fmt.Printf("Ping received from %s\n", msg.NodeID)
-			var pingMsg PingMessage
-			err := json.Unmarshal(payload, &pingMsg)
-			if err != nil {
-				return err
-			}
-			fmt.Println(msg.Message)
-			// // Verified that the cluster does exist on other peers
-			// // so create a cluster entry in the cluster table
-			//
-			// // State of new node is set to IDLE on default
-			convCname := pingMsg.ClusterName
-			cl, ok := (*n.ClusterTable)[convCname]
-			if !ok {
-				return fmt.Errorf("Cluster does not exist")
-				// CreateCluster(n, convCname)
-				// cl = (*n.ClusterTable)[convCname]
-			}
-			// // update map
-			//
-			cl.NewClusterPeerThread(msg.NodeID)
-			// cl.NewClusterPeer(msg.NodeAddr, msg.NodeID)
-			fmt.Printf("Peer thread created in cluster '%s'\n", convCname)
+			var pingMsg PingResponse = PingResponse(payload)
+			fmt.Println(pingMsg)
 			fmt.Println("Pong")
 		case PROBE:
 			var fileMetaData FileMetaData
@@ -456,14 +459,8 @@ func (n *Node) Ping(cname ClusterName) error {
 	fmt.Println(len(c.ClusterPeers))
 	for _, p := range c.ClusterPeers {
 		fmt.Printf("\nPEER: %+v\n", p)
-		newPingMsg := PingMessage{ClusterName: cname, Status: IDLE}
 
-		b, err := json.Marshal(newPingMsg)
-		if err != nil {
-			return err
-		}
-
-		buf, err := WrapPayloadToBuffer(newMsg, b)
+		buf, err := WrapPayloadToBuffer(newMsg, []byte("Ping"))
 		if err != nil {
 			fmt.Printf("%s", err)
 			continue
@@ -606,4 +603,15 @@ func (n *Node) SendMsg(message []byte, peerAddr NodeAddr) error {
 	fmt.Printf("Marshalled Size: %d including payload, Prefix Header Size: %d\nTotal Size: %d", len(message[PREFIX_HEADER_SIZE:]), PREFIX_HEADER_SIZE, len(message))
 
 	return nil
+}
+
+func protocolErrorWrap(errStr string, msgType MsgType, methodType Method) error {
+	switch msgType {
+	case CALL:
+		return fmt.Errorf("[REPLY]: ERROR - METHOD: %s - Message: '%s'", MethodStringMap[methodType], errStr)
+	case REPLY:
+		return fmt.Errorf("[CALL]: ERROR - METHOD: %s - Message: '%s'", MethodStringMap[methodType], errStr)
+	default:
+		panic("MsgType not either CALL | REPLY types")
+	}
 }
