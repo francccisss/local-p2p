@@ -1,5 +1,7 @@
 package protocol
 
+import "net"
+
 type PeerStatus int
 
 const (
@@ -11,8 +13,10 @@ const (
 type NodeID string
 
 type NodeAddr struct {
+	NodeID
 	IP   []byte
 	Port int
+	Conn *net.TCPConn
 }
 
 type Node struct {

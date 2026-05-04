@@ -71,6 +71,7 @@ func main() {
 	}
 
 	node := protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: addr.Port}, protocol.NodeID(nodeID.String()), FILE_LOCATION)
+	node.ClusterTable = protocol.CreateclusterTable()
 
 	// read prefix header first
 	bodyBuf := make([]byte, 10)
@@ -103,9 +104,9 @@ func main() {
 				}
 				if mr.state == DONE {
 					fmt.Println("Process rpc message and payload")
-					fmt.Printf("Header extracted %+v\n", header)
+					fmt.Printf("Payload: %s\n", pl)
 					go func() {
-						err := protocol.RecvRPCMessage(node, header, pl)
+						err := node.RecvRPCMessage(header, pl)
 						if err != nil {
 							fmt.Println(err)
 						}
@@ -114,7 +115,6 @@ func main() {
 			}
 		}()
 	}
-
 }
 
 func handleConn() {}

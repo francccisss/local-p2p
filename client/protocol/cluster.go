@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net"
 	"time"
 )
 
@@ -20,12 +21,13 @@ type ClusterPeerThread struct {
 type ClusterPeer struct {
 	Addr   NodeAddr
 	NodeID NodeID
+	Conn   *net.TCPConn
 }
 type Cluster struct {
 	ClusterPeerThreads map[NodeID]*ClusterPeerThread // keep track of peers
 	ClusterName        ClusterName
 	ClusterPeers       []ClusterPeer
-	Peer               Peer // created when a cluster is created
+	CurrentNode        Peer // created when a cluster is created
 }
 
 type Peer struct {
@@ -35,22 +37,22 @@ type Peer struct {
 
 type ClusterTable map[ClusterName]*Cluster
 
-func CreateCluster(n *Node, cname ClusterName) {
+func CreateclusterTable() *ClusterTable {
+	clt := make(ClusterTable)
+	return &clt
+
+}
+
+func CreateCluster(cname ClusterName) *Cluster {
 	cpt := make(map[NodeID]*ClusterPeerThread)
 	newCluster := Cluster{
 		ClusterPeerThreads: cpt,
 		ClusterPeers:       []ClusterPeer{},
-		Peer:               Peer{Status: IDLE, ClusterName: cname},
+		CurrentNode:        Peer{Status: IDLE, ClusterName: cname},
 		ClusterName:        cname,
 	}
 
-	_, ok := (*n.ClusterTable)[cname]
-	if !ok {
-		(*n.ClusterTable)[cname] = &newCluster
-		fmt.Printf("New Cluster created for '%s'\n", cname)
-		return
-	}
-	fmt.Printf("Cluster '%s' already exists\n", cname)
+	return &newCluster
 
 }
 
