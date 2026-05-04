@@ -439,9 +439,37 @@ func (n *Node) FindCluster(cname ClusterName) {
 
 }
 
-// n asks what other peers if they have this p.cname
-// in their table, if so, they add this node and set the status to idle.
-func (n *Node) Ping(cname ClusterName) error {
+func (n *Node) PingNodes() error {
+
+	var newMsg RPCMsg = RPCMsg{
+		RPCType:    CALL,
+		NodeAddr:   n.Addr,
+		Method:     PING,
+		StatusCode: SUCCESS,
+		NodeID:     n.NodeID,
+	}
+
+	for _, neighbor := range n.NeighboringNodes {
+		fmt.Printf("\nNEIGHBOR: %+v\n", neighbor)
+
+		buf, err := WrapPayloadToBuffer(newMsg, []byte("Ping"))
+		if err != nil {
+			fmt.Printf("%s", err)
+			continue
+		}
+		err = n.SendMsg(buf, neighbor.Addr)
+		if err != nil {
+			fmt.Printf("%s", err)
+			continue
+		}
+	}
+
+	fmt.Println("\nPinging peers in cluster.")
+	fmt.Println("Ping Sent")
+	return nil
+}
+
+func (n *Node) PingCluster(cname ClusterName) error {
 
 	var newMsg RPCMsg = RPCMsg{
 		RPCType:    CALL,
@@ -454,9 +482,8 @@ func (n *Node) Ping(cname ClusterName) error {
 	// for bootstrapped nodes
 	c, ok := (*n.ClusterTable)[cname]
 	if !ok {
-		return fmt.Errorf("ERROR: Cluster not found")
+		return fmt.Errorf("Cluster not found")
 	}
-	fmt.Println(len(c.ClusterPeers))
 	for _, p := range c.ClusterPeers {
 		fmt.Printf("\nPEER: %+v\n", p)
 
