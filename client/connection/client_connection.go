@@ -77,7 +77,7 @@ func MessageHandler(conn *net.Conn, node *protocol.Node) {
 			fmt.Println("Process rpc message and payload")
 			fmt.Printf("Payload: %s\n", pl)
 			go func() {
-				err := node.RecvRPCMessage(header, pl)
+				err := node.RecvRPCMessage(header, pl, conn)
 				if err != nil {
 					fmt.Println(err)
 					return
