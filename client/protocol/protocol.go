@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-type Method int
+type Method uint32
 type MethodString string
 
 const (
@@ -51,7 +51,7 @@ type ClientConn interface {
 	RecvRPCMessage(msg RPCMsg) error
 }
 
-type MsgType int
+type MsgType uint32
 
 const (
 	CALL MsgType = iota
@@ -114,7 +114,7 @@ func ReadRPCMessage(buffer []byte) (RPCMsg, error) {
 // METHODS FOR HANDLING A `CALL` RPC MESSAGE
 // -----------------------------------------
 
-// TODO add checksum parameter passed in by caller
+// TODO: add checksum parameter passed in by caller
 // each file corresponds to a cluster name
 
 func ProbeFile(FILE_LOCATION string, cname ClusterName) (StatusCode, FileMetaData, error) {
@@ -292,7 +292,6 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn *net.Conn) error 
 			}
 
 		case PROBE:
-			newRPCMsg.Method = PROBE
 			cname := string(payload)
 			status, meta, err := ProbeFile(n.FILE_LOCATION, ClusterName(cname))
 

@@ -129,9 +129,12 @@ func (mr *MessageReader) extractMessage(buffer []byte) (protocol.RPCMsg, Payload
 				return mr.metaJson, nil, err
 			}
 			fmt.Printf("Meta data received %+v\n", mr.metaJson)
-			mr.payloadSize = int(mr.metaJson.PayloadSize)
 			mr.phase = PAYLOAD
+			mr.metaJson.RPCType = protocol.MsgType(ntoh(uint32(mr.metaJson.RPCType)))
+			mr.metaJson.PayloadSize = ntoh(mr.metaJson.PayloadSize)
+			mr.metaJson.Method = protocol.Method(ntoh(uint32(mr.metaJson.Method)))
 
+			mr.payloadSize = int(mr.metaJson.PayloadSize)
 			fmt.Printf("Buffer len for next phase: %d\n", len(buffer))
 
 			fmt.Printf("Bytes left to read: %d\n", (mr.metaJsonSize+protocol.PREFIX_HEADER_SIZE+mr.payloadSize)-(mr.metaJsonSize+protocol.PREFIX_HEADER_SIZE))
@@ -157,4 +160,10 @@ func (mr *MessageReader) extractMessage(buffer []byte) (protocol.RPCMsg, Payload
 		}
 
 	}
+}
+
+func ntoh(num uint32) uint32 {
+	buf := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf, num)
+	return binary.LittleEndian.Uint32(buf)
 }
