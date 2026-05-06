@@ -59,12 +59,12 @@ func MessageHandler(conn *net.Conn, node *protocol.Node) {
 	for {
 		// Reads from the file descriptor set by the kernel for the node that was accepted
 		n, err := (*conn).Read(bodyBuf)
+		if n == 0 {
+			return
+		}
 		defer (*conn).Close()
 		if err != nil {
-			if err.Error() == "EOF" {
-				fmt.Println("[MESSAGE HANDLER ERROR]: EOF")
-				return
-			}
+			return
 		}
 		header, pl, err := mr.extractMessage(bodyBuf[:n])
 		if err != nil {

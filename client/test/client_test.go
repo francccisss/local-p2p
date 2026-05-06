@@ -32,7 +32,7 @@ func TestClientConnection(t *testing.T) {
 	}
 	for {
 		if err := connection.HandleConn(&listener, node); err != nil {
-			fmt.Println("[TEST]: ERROR HANDLE CONN")
+			fmt.Println("[TEST]: ERROR Listener")
 			fmt.Println(err)
 			t.FailNow()
 		}

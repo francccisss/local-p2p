@@ -16,7 +16,8 @@ type Method int
 type MethodString string
 
 const (
-	PING Method = iota
+	PING_NODE Method = iota
+	PING_CLUSTER
 	LEECH
 	PROBE
 	JOIN
@@ -24,11 +25,12 @@ const (
 )
 
 var MethodStringMap = map[Method]MethodString{
-	0: "PING",
-	1: "LEECH",
-	2: "PROBE",
-	3: "JOIN",
-	4: "FIND CLUSTER",
+	0: "PING NODE",
+	1: "PING CLUSTER",
+	2: "LEECH",
+	3: "PROBE",
+	4: "JOIN",
+	5: "FIND CLUSTER",
 }
 
 const PREFIX_HEADER_SIZE = 4
@@ -145,12 +147,8 @@ func ProbeFile(FILE_LOCATION string, cname ClusterName) (StatusCode, FileMetaDat
 // METHODS FOR CREATING A `CALL` RPC MESSAGE
 // -----------------------------------------
 
-// TODO: Need to differentiate between node and peer connections
-// - node connection should be closed immediately after a response from another host
-// has responded to the request or an error has occured, if an error has occured
-// from the responder, given a timeout value when expired will then close the tcp connection
-//  - this depends on what `CALL` is considered to be `for nodes` and `for peers`
-
+// TODO: change the unnecessary integers from RPCMsg data type to string
+// so that we can avoid having to reorder the byte ordering from the network
 func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn *net.Conn) error {
 
 	switch msg.RPCType {
@@ -166,11 +164,12 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn *net.Conn) error 
 			NodeID:      n.NodeID,
 			IP:          n.Addr.IP,
 			Message:     "",
-			StatusCode:  0,
+			StatusCode:  SUCCESS,
 			PayloadSize: 0,
+			Port:        make([]byte, 4),
 		}
+		// setting requesting node's port to host byte ordering
 		binary.LittleEndian.PutUint32(newRPCMsg.Port, uint32(n.Addr.Port))
-		// PRELOADING RPC MESSAGE
 		switch msg.Method {
 
 		case FIND_CLUSTER:
@@ -218,12 +217,11 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn *net.Conn) error 
 				return err
 			}
 
-		case PING:
+		case PING_CLUSTER:
 
 			// sender triggers a ping on receiver(this)
 			// receiver sends their NodeID in return
 			// so that the sender can keep track of the receivers
-			newRPCMsg.StatusCode = SUCCESS
 			newRPCMsg.Message = "Pong"
 			pr := PingRequest(payload)
 			fmt.Printf("[CALL]: PING - pinged by neighboring node %s\n", pr)
@@ -232,14 +230,31 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn *net.Conn) error 
 
 			b, err := WrapPayloadToBuffer(newRPCMsg, []byte(newPingResponse))
 			if err != nil {
-				return protocolErrorWrap(err.Error(), CALL, PING)
+				return ProtocolErrorWrap(err.Error(), CALL, PING_CLUSTER)
 			}
 			err = SendViaExistingConn(b, conn)
 			if err != nil {
-				return protocolErrorWrap(err.Error(), CALL, PING)
+				return ProtocolErrorWrap(err.Error(), CALL, PING_CLUSTER)
 			}
 			fmt.Println("Ping")
+		case PING_NODE:
+			var newPingResponse PingResponse = PingResponse(NodeStatusMap[ACTIVE])
+			newRPCMsg.Message = "Pong"
+			fmt.Printf("Sending Ping reponse %s, in bytes %b\n", newPingResponse, []byte(newPingResponse))
+			newRPCMsg.PayloadSize = uint32(len([]byte(newPingResponse)))
+			b, err := WrapPayloadToBuffer(newRPCMsg, []byte(newPingResponse))
+			if err != nil {
+				return ProtocolErrorWrap(err.Error(), CALL, PING_NODE)
+			}
+			requstNodePort := binary.LittleEndian.Uint32(msg.Port)
+			requestNodeAddr := NodeAddr{IP: msg.IP, Port: int(requstNodePort)}
+			err = SendMsg(b, requestNodeAddr)
+			if err != nil {
+				return ProtocolErrorWrap(err.Error(), CALL, PING_NODE)
+			}
+
 		case LEECH:
+
 			// a call to leech received a single SegmentHeader
 			// a reply to leech receives an array of SegmentHeaders
 			var fr FileRequest
@@ -314,12 +329,8 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn *net.Conn) error 
 	case REPLY: // when peers/nodes send a call RPCType
 
 		if msg.StatusCode == ERROR {
-			return fmt.Errorf("%s", msg.Message)
-		}
-		var seg SegmentHeader
-		err := json.Unmarshal(payload, &seg)
-		if err != nil {
-			return err
+
+			return ProtocolErrorWrap(msg.Message, REPLY, msg.Method)
 		}
 
 		switch msg.Method {
@@ -347,57 +358,61 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn *net.Conn) error 
 
 		case LEECH:
 
-			// match the clustername and then the NodeID that sent the request
-			c, ok := (*n.ClusterTable)[seg.ClusterName]
-			if !ok {
-				return fmt.Errorf("Cluster does not exist")
-			}
+			// // match the clustername and then the NodeID that sent the request
+			// c, ok := (*n.ClusterTable)[seg.ClusterName]
+			// if !ok {
+			// 	return fmt.Errorf("Cluster does not exist")
+			// }
+			//
+			// t, ok := c.ClusterPeerThreads[msg.NodeID]
+			// if !ok {
+			// 	return fmt.Errorf("NodeID Key does not exist for thread")
+			// }
+			// var ds SegmentHeader
+			// err := json.Unmarshal(payload, &ds)
+			// if err != nil {
+			// 	return err
+			// }
+			// // t.BytesReceived += len(ds.DataChunk)
+			// t.NodeIDChann <- msg.NodeID
+			// // calculate segments received currently
+			// if ds.SegmentPosition == ds.TotalSegments {
+			// 	fmt.Println("WE ARE DONE BUCKO")
+			// 	return nil
+			// }
+			// // read the file to create a FileRequest
+			// // the file contains the meta data of the file that is to
+			// // be leeched from other peers
+			// // TODO: make sure that we're calling openfile once
+			// // store it in memory so we dont have to use syscall
+			// // everytime a leech reply is received which would take potentially take
+			//
+			// // TODO: For testing only remove this after testing the file transfer if it works
+			// dfinfo := FileRequest{
+			// 	Hash:      "IosevkaTerm.zip",
+			// 	Size:      374780158,
+			// 	Offset:    ds.SegmentPosition,
+			// 	BlockSize: int64(os.Getpagesize()),
+			// }
+			// // TODO: For testing only remove this after testing the file transfer if it works
+			//
+			// err = n.Leech(ds.ClusterName, false, dfinfo)
+			// if err != nil {
+			// 	return err
+			// }
+		case PING_NODE:
 
-			t, ok := c.ClusterPeerThreads[msg.NodeID]
-			if !ok {
-				return fmt.Errorf("NodeID Key does not exist for thread")
-			}
-			var ds SegmentHeader
-			err := json.Unmarshal(payload, &ds)
-			if err != nil {
-				return err
-			}
-			// t.BytesReceived += len(ds.DataChunk)
-			t.NodeIDChann <- msg.NodeID
-			// calculate segments received currently
-			if ds.SegmentPosition == ds.TotalSegments {
-				fmt.Println("WE ARE DONE BUCKO")
-				return nil
-			}
-			// read the file to create a FileRequest
-			// the file contains the meta data of the file that is to
-			// be leeched from other peers
-			// TODO: make sure that we're calling openfile once
-			// store it in memory so we dont have to use syscall
-			// everytime a leech reply is received which would take potentially take
+			var pingMsg PingResponse = PingResponse(payload)
+			fmt.Printf("Payload PingResponse-%s\n", pingMsg)
+			fmt.Printf("Message: %s\n", msg.Message)
+			(*conn).Close()
 
-			// TODO: For testing only remove this after testing the file transfer if it works
-			dfinfo := FileRequest{
-				Hash:      "IosevkaTerm.zip",
-				Size:      374780158,
-				Offset:    ds.SegmentPosition,
-				BlockSize: int64(os.Getpagesize()),
-			}
-			// TODO: For testing only remove this after testing the file transfer if it works
-
-			err = n.Leech(ds.ClusterName, false, dfinfo)
-			if err != nil {
-				return err
-			}
-		case PING:
+		case PING_CLUSTER:
 			// When receivers of the call responds/reply back to this
 			// process, create a new cluster with name and initialize
 			// pear threads and assign a peer thread that corresponds
 			// with the receiver's NodeID that it send from PING
 
-			if msg.StatusCode == ERROR {
-				return protocolErrorWrap(msg.Message, REPLY, PING)
-			}
 			fmt.Printf("Ping received from %s\n", msg.NodeID)
 			var pingMsg PingResponse = PingResponse(payload)
 			fmt.Println(pingMsg)
@@ -463,9 +478,10 @@ func (n *Node) PingNodes() error {
 	var newMsg RPCMsg = RPCMsg{
 		RPCType:    CALL,
 		IP:         n.Addr.IP,
-		Method:     PING,
+		Method:     PING_NODE,
 		StatusCode: SUCCESS,
 		NodeID:     n.NodeID,
+		Port:       make([]byte, 4),
 	}
 	binary.LittleEndian.PutUint32(newMsg.Port, uint32(n.Addr.Port))
 	ping := []byte("Ping")
@@ -492,10 +508,11 @@ func (n *Node) PingCluster(cname ClusterName) error {
 
 	var newMsg RPCMsg = RPCMsg{
 		RPCType:    CALL,
-		Method:     PING,
+		Method:     PING_CLUSTER,
 		StatusCode: SUCCESS,
 		NodeID:     n.NodeID,
 		IP:         n.Addr.IP,
+		Port:       make([]byte, 4),
 	}
 
 	binary.LittleEndian.PutUint32(newMsg.Port, uint32(n.Addr.Port))
@@ -586,6 +603,7 @@ func (n *Node) Leech(cname ClusterName, spawnThreads bool, fr FileRequest) error
 		NodeID:  n.NodeID,
 		Method:  LEECH,
 		Message: "",
+		Port:    make([]byte, 4),
 	}
 
 	binary.LittleEndian.PutUint32(newMsg.Port, uint32(n.Addr.Port))
@@ -664,7 +682,7 @@ func SendMsg(message []byte, peerAddr NodeAddr) error {
 	return nil
 }
 
-func protocolErrorWrap(errStr string, msgType MsgType, methodType Method) error {
+func ProtocolErrorWrap(errStr string, msgType MsgType, methodType Method) error {
 	switch msgType {
 	case CALL:
 		return fmt.Errorf("[CALL]: ERROR - METHOD: %s - Message: '%s'", MethodStringMap[methodType], errStr)
