@@ -34,37 +34,43 @@ type MessageReader struct {
 }
 type Payload []byte
 
-func HandleConn(l *net.TCPListener, node *protocol.Node) error {
-	bodyBuf := make([]byte, 10)
+func HandleConn(l *net.Listener, node *protocol.Node) error {
+
+	for {
+		// creates a new file descriptor for incoming tcp connection from node/peer
+		conn, err := (*l).Accept()
+		if err != nil {
+			fmt.Printf("Connection from %s failed\n", conn.LocalAddr().String())
+			return err
+		}
+		go MessageHandler(&conn, node)
+	}
+}
+
+func MessageHandler(conn *net.Conn, node *protocol.Node) {
+
+	bodyBuf := make([]byte, 4096)
 	var mr MessageReader = MessageReader{
 		payloadBuffer: make([]byte, 0, 4096),
 		jsonBuffer:    make([]byte, 0, 4096),
 		state:         PROCESSING,
 	}
-
-	for {
-		conn, err := (*l).Accept()
-		if err != nil {
-			fmt.Println("Failed to read data to bodybuf")
-			return err
-		}
-		go MessageHandler(&conn, bodyBuf, &mr, node)
-	}
-}
-
-func MessageHandler(conn *net.Conn, bodyBuf []byte, mr *MessageReader, node *protocol.Node) {
 	fmt.Printf("Received TCP Connection: %+v\n", conn)
 	for {
+		// Reads from the file descriptor set by the kernel for the node that was accepted
 		n, err := (*conn).Read(bodyBuf)
+		defer (*conn).Close()
 		if err != nil {
-			fmt.Println("Failed to read data to bodybuf")
-			panic(err)
+			if err.Error() == "EOF" {
+				fmt.Println("[MESSAGE HANDLER ERROR]: EOF")
+				return
+			}
 		}
-		header, pl, err := mr.ExtractMessage(bodyBuf[:n])
+		header, pl, err := mr.extractMessage(bodyBuf[:n])
 		if err != nil {
 			fmt.Println("Failed to extract message")
 			fmt.Printf("ERROR: %s\n", err)
-			*mr = MessageReader{}
+			mr = MessageReader{}
 			continue
 		}
 		if mr.state == DONE {
@@ -74,14 +80,17 @@ func MessageHandler(conn *net.Conn, bodyBuf []byte, mr *MessageReader, node *pro
 				err := node.RecvRPCMessage(header, pl)
 				if err != nil {
 					fmt.Println(err)
+					return
 				}
 			}()
+			mr = MessageReader{}
+			continue
 		}
 	}
 
 }
 
-func (mr *MessageReader) ExtractMessage(buffer []byte) (protocol.RPCMsg, Payload, error) {
+func (mr *MessageReader) extractMessage(buffer []byte) (protocol.RPCMsg, Payload, error) {
 
 	for {
 		switch mr.phase {

@@ -1,43 +1,40 @@
 package test
 
 import (
+	"client/connection"
 	"client/protocol"
-	"encoding/json"
 	"fmt"
+	"net"
 	"testing"
 )
 
+var node *protocol.Node
+
 func TestClientConnection(t *testing.T) {
 
-	pngMsg := protocol.PingMessage{
-		Status:      protocol.IDLE,
-		ClusterName: "cluster",
-	}
-	pngBuf, err := json.Marshal(pngMsg)
+	addr := net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 3030}
+
+	node = protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: 3030}, "pinger", "")
+	node.NeighboringNodes = append(node.NeighboringNodes, protocol.NodeAddr{IP: net.ParseIP("127.0.0.1"), Port: 5656})
+	fmt.Println("Pinging Nodes")
+	err := node.PingNodes()
 	if err != nil {
 		fmt.Println(err)
 		t.FailNow()
 	}
 
-	msg := protocol.RPCMsg{
-		NodeID:      protocol.NodeID("Sender"),
-		Method:      protocol.PING,
-		RPCType:     protocol.CALL,
-		StatusCode:  0,
-		Message:     "Ni hao",
-		PayloadSize: uint32(len(pngBuf)),
-	}
-
-	fmt.Printf("Payload size: %d\n", len(pngBuf))
-	buf, err := protocol.WrapPayloadToBuffer(msg, pngBuf)
+	fmt.Println(addr.String())
+	listener, err := net.Listen("tcp4", addr.String())
 	if err != nil {
+		fmt.Println("[TEST]: ERROR Listener")
 		fmt.Println(err)
 		t.FailNow()
 	}
-	err = protocol.SendMsg(buf, protocol.NodeAddr{Port: 5656, IP: []byte("localhost")})
-	if err != nil {
-		fmt.Println("Failed to send udp message")
-		t.FailNow()
+	for {
+		if err := connection.HandleConn(&listener, node); err != nil {
+			fmt.Println("[TEST]: ERROR HANDLE CONN")
+			fmt.Println(err)
+			t.FailNow()
+		}
 	}
-
 }

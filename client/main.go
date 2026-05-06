@@ -19,7 +19,7 @@ func main() {
 	// args[1] port number, args[2] command, args[3] parameter for command
 	args := os.Args[1:]
 	print_args()
-	ip := []byte("") // TODO Change this and grab local IP address
+	ip := net.ParseIP("127.0.0.1") // TODO Change this and grab local IP address
 	if len(args) < 1 {
 		panic("No port arguments, add a port number")
 	}
@@ -32,9 +32,10 @@ func main() {
 
 	addr := &net.TCPAddr{IP: ip, Port: port}
 
-	l, err := net.ListenTCP("tcp", addr)
+	fmt.Println(addr.IP)
+	l, err := net.Listen("tcp4", addr.String())
 	if err != nil {
-		fmt.Println(err.Error())
+		fmt.Printf("Bind Error: %s\n", err.Error())
 		panic("Shutting down")
 	}
 	defer l.Close()
@@ -48,7 +49,11 @@ func main() {
 
 	// blocking handler
 	// TODO: create context for this function handler so that we can cancel through process interrupts
-	connection.HandleConn(l, node)
+	err = connection.HandleConn(&l, node)
+	if err != nil {
+		fmt.Println(err)
+
+	}
 }
 
 func print_args() {

@@ -33,7 +33,7 @@ func NewNode(addr NodeAddr, nodeID NodeID, fileLoc string) *Node {
 		Addr:             addr,
 		NodeID:           nodeID,
 		FILE_LOCATION:    fileLoc,
-		NeighboringNodes: make([]NodeAddr, 10),
+		NeighboringNodes: make([]NodeAddr, 0, 10),
 		ClusterTable:     &newClusterTable,
 	}
 

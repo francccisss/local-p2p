@@ -37,6 +37,9 @@ const PREFIX_HEADER_SIZE = 4
 // this interface describes the characteristics of
 // a Node in a cluster that makes it able to communicate with its peers
 
+type DialConn struct {
+}
+
 type ClientConn interface {
 	FindCluster(cname ClusterName)
 	Join()
@@ -63,7 +66,8 @@ const (
 // MsgType could be either reply or call
 type RPCMsg struct {
 	RPCType     MsgType
-	NodeAddr    NodeAddr
+	IP          []byte
+	Port        []byte
 	NodeID      NodeID
 	Method      Method
 	PayloadSize uint32
@@ -141,6 +145,11 @@ func ProbeFile(FILE_LOCATION string, cname ClusterName) (StatusCode, FileMetaDat
 // METHODS FOR CREATING A `CALL` RPC MESSAGE
 // -----------------------------------------
 
+// TODO: Need to differentiate between node and peer connections
+// - node connection should be closed immediately after a response from another host
+// has responded to the request.
+//  - this depends on what `CALL` is considered to be `for nodes` and `for peers`
+
 func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte) error {
 
 	switch msg.RPCType {
@@ -148,16 +157,18 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte) error {
 
 		var newRPCMsg RPCMsg
 		fmt.Println("Call Message")
-		// PRELOADING RPC MESSAGE
+
 		newRPCMsg = RPCMsg{
 			Method:      msg.Method,
 			RPCType:     REPLY,
 			NodeID:      n.NodeID,
-			NodeAddr:    NodeAddr{IP: n.Addr.IP, Port: n.Addr.Port},
+			IP:          n.Addr.IP,
 			Message:     "",
 			StatusCode:  0,
 			PayloadSize: 0,
 		}
+		binary.LittleEndian.PutUint32(newRPCMsg.Port, uint32(n.Addr.Port))
+		// PRELOADING RPC MESSAGE
 		switch msg.Method {
 
 		case FIND_CLUSTER:
@@ -176,7 +187,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte) error {
 				if err != nil {
 					return err
 				}
-				return fmt.Errorf("Unable to deliver reply from PING CALL")
+				return fmt.Errorf("Unable to deliver reply from FIND CLUSTER CALL")
 			}
 
 			fmt.Printf("Cluster '%s' exists\n", plcname)
@@ -206,6 +217,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte) error {
 			}
 
 		case PING:
+
 			// sender triggers a ping on receiver(this)
 			// receiver sends their NodeID in return
 			// so that the sender can keep track of the receivers
@@ -213,6 +225,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte) error {
 			newRPCMsg.Message = "Pong"
 			pr := PingRequest(payload)
 			fmt.Printf("[CALL]: PING - pinged by neighboring node %s\n", pr)
+
 			var newPingResponse PingResponse = PingResponse(NodeStatusMap[ACTIVE]) // interesting unnessary type assertion
 
 			b, err := WrapPayloadToBuffer(newRPCMsg, []byte(newPingResponse))
@@ -412,12 +425,13 @@ func (n *Node) FindCluster(cname ClusterName) {
 	payload := []byte(cname)
 	newMsg := RPCMsg{
 		NodeID:      n.NodeID,
-		NodeAddr:    n.Addr,
 		Message:     "where cluster?",
 		Method:      FIND_CLUSTER,
 		RPCType:     CALL,
+		IP:          n.Addr.IP,
 		PayloadSize: uint32(len(payload)),
 	}
+	binary.LittleEndian.PutUint32(newMsg.Port, uint32(n.Addr.Port))
 
 	for _, n := range n.NeighboringNodes {
 		wg.Go(func() {
@@ -439,45 +453,50 @@ func (n *Node) FindCluster(cname ClusterName) {
 
 }
 
+// The difference between PingCluster & PingNodes is pretty self explanatory
+// instead of pinging a cluster and also the function uses Dial instead of
+// the existing TCP connection
 func (n *Node) PingNodes() error {
 
 	var newMsg RPCMsg = RPCMsg{
 		RPCType:    CALL,
-		NodeAddr:   n.Addr,
+		IP:         n.Addr.IP,
 		Method:     PING,
 		StatusCode: SUCCESS,
 		NodeID:     n.NodeID,
 	}
-
+	binary.LittleEndian.PutUint32(newMsg.Port, uint32(n.Addr.Port))
+	ping := []byte("Ping")
+	newMsg.PayloadSize = uint32(len(ping))
+	buf, err := WrapPayloadToBuffer(newMsg, ping)
 	for _, neighbor := range n.NeighboringNodes {
 		fmt.Printf("\nNEIGHBOR: %+v\n", neighbor)
 
-		buf, err := WrapPayloadToBuffer(newMsg, []byte("Ping"))
 		if err != nil {
 			fmt.Printf("%s", err)
 			continue
 		}
-		err = n.SendMsg(buf, neighbor.Addr)
+		err = n.SendMsg(buf, neighbor)
 		if err != nil {
 			fmt.Printf("%s", err)
 			continue
 		}
 	}
-
-	fmt.Println("\nPinging peers in cluster.")
-	fmt.Println("Ping Sent")
 	return nil
 }
 
+// Pinging cluster uses the existing TCP connections for communication
 func (n *Node) PingCluster(cname ClusterName) error {
 
 	var newMsg RPCMsg = RPCMsg{
 		RPCType:    CALL,
-		NodeAddr:   n.Addr,
 		Method:     PING,
 		StatusCode: SUCCESS,
 		NodeID:     n.NodeID,
+		IP:         n.Addr.IP,
 	}
+
+	binary.LittleEndian.PutUint32(newMsg.Port, uint32(n.Addr.Port))
 
 	// for bootstrapped nodes
 	c, ok := (*n.ClusterTable)[cname]
@@ -492,15 +511,12 @@ func (n *Node) PingCluster(cname ClusterName) error {
 			fmt.Printf("%s", err)
 			continue
 		}
-		err = n.SendMsg(buf, p.Addr)
+		_, err = p.Conn.Write(buf)
 		if err != nil {
 			fmt.Printf("%s", err)
 			continue
 		}
 	}
-
-	fmt.Println("\nPinging peers in cluster.")
-	fmt.Println("Ping Sent")
 	return nil
 }
 
@@ -510,11 +526,12 @@ func (n *Node) Probe(cname ClusterName) error {
 		return fmt.Errorf("Cluster does not exist")
 	}
 	newMsg := RPCMsg{
-		RPCType:  CALL,
-		Method:   PROBE,
-		NodeID:   n.NodeID,
-		NodeAddr: n.Addr,
+		RPCType: CALL,
+		Method:  PROBE,
+		NodeID:  n.NodeID,
+		IP:      n.Addr.IP,
 	}
+	binary.LittleEndian.PutUint32(newMsg.Port, uint32(n.Addr.Port))
 
 	for _, cp := range c.ClusterPeers {
 
@@ -562,12 +579,14 @@ func (n *Node) Leech(cname ClusterName, spawnThreads bool, fr FileRequest) error
 		return err
 	}
 	newMsg := RPCMsg{
-		RPCType:  CALL,
-		NodeAddr: n.Addr,
-		NodeID:   n.NodeID,
-		Method:   LEECH,
-		Message:  "",
+		RPCType: CALL,
+		IP:      n.Addr.IP,
+		NodeID:  n.NodeID,
+		Method:  LEECH,
+		Message: "",
 	}
+
+	binary.LittleEndian.PutUint32(newMsg.Port, uint32(n.Addr.Port))
 	for _, p := range c.ClusterPeers {
 
 		buf, err := WrapPayloadToBuffer(newMsg, mds)
@@ -585,6 +604,7 @@ func (n *Node) Leech(cname ClusterName, spawnThreads bool, fr FileRequest) error
 	return nil
 }
 
+// Need to set little endian of ip and port due to int values
 func WrapPayloadToBuffer(msg RPCMsg, payload []byte) ([]byte, error) {
 	b, err := json.Marshal(msg)
 	if err != nil {
@@ -615,11 +635,14 @@ func (n *Node) SendMsg(message []byte, peerAddr NodeAddr) error {
 	port := strconv.Itoa(peerAddr.Port)
 	// first byte size of json meta data
 
-	conn, err := net.Dial("tcp", string(peerAddr.IP)+":"+strconv.Itoa(peerAddr.Port))
+	ad := net.TCPAddr{IP: peerAddr.IP, Port: peerAddr.Port}
+	fmt.Println(ad.String())
+	conn, err := net.Dial("tcp4", ad.String())
 
 	if err != nil {
 		return err
 	}
+	fmt.Println("SENDING")
 	fmt.Printf("Sending to: %s\n", ip+":"+port)
 
 	_, err = conn.Write(message)
@@ -627,7 +650,7 @@ func (n *Node) SendMsg(message []byte, peerAddr NodeAddr) error {
 		return err
 	}
 
-	fmt.Printf("Marshalled Size: %d including payload, Prefix Header Size: %d\nTotal Size: %d", len(message[PREFIX_HEADER_SIZE:]), PREFIX_HEADER_SIZE, len(message))
+	fmt.Printf("Marshalled Size: %d including payload, Prefix Header Size: %d\nTotal Size: %d\n", len(message[PREFIX_HEADER_SIZE:]), PREFIX_HEADER_SIZE, len(message))
 
 	return nil
 }
@@ -635,9 +658,9 @@ func (n *Node) SendMsg(message []byte, peerAddr NodeAddr) error {
 func protocolErrorWrap(errStr string, msgType MsgType, methodType Method) error {
 	switch msgType {
 	case CALL:
-		return fmt.Errorf("[REPLY]: ERROR - METHOD: %s - Message: '%s'", MethodStringMap[methodType], errStr)
-	case REPLY:
 		return fmt.Errorf("[CALL]: ERROR - METHOD: %s - Message: '%s'", MethodStringMap[methodType], errStr)
+	case REPLY:
+		return fmt.Errorf("[REPLY]: ERROR - METHOD: %s - Message: '%s'", MethodStringMap[methodType], errStr)
 	default:
 		panic("MsgType not either CALL | REPLY types")
 	}
