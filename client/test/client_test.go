@@ -38,3 +38,7 @@ func TestClientConnection(t *testing.T) {
 		}
 	}
 }
+
+func TestClusterSearch(t *testing.T) {
+
+}
