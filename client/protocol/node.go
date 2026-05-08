@@ -24,17 +24,14 @@ type Node struct {
 	NodeID           NodeID
 	Addr             NodeAddr
 	FILE_LOCATION    string
-	ClusterTable     *ClusterTable
 }
 
 func NewNode(addr NodeAddr, nodeID NodeID, fileLoc string) *Node {
-	newClusterTable := make(ClusterTable)
 	return &Node{
 		Addr:             addr,
 		NodeID:           nodeID,
 		FILE_LOCATION:    fileLoc,
 		NeighboringNodes: make([]NodeAddr, 0, 10),
-		ClusterTable:     &newClusterTable,
 	}
 
 }

@@ -34,7 +34,7 @@ type MessageReader struct {
 }
 type Payload []byte
 
-func HandleConn(l *net.Listener, node *protocol.Node) error {
+func HandleConn(l *net.Listener, node *protocol.Node, clt *protocol.ClusterTable) error {
 
 	for {
 		// creates a new file descriptor for incoming tcp connection from node/peer
@@ -43,11 +43,11 @@ func HandleConn(l *net.Listener, node *protocol.Node) error {
 			fmt.Printf("Connection from %s failed\n", conn.LocalAddr().String())
 			return err
 		}
-		go MessageHandler(&conn, node)
+		go MessageHandler(&conn, node, clt)
 	}
 }
 
-func MessageHandler(conn *net.Conn, node *protocol.Node) {
+func MessageHandler(conn *net.Conn, node *protocol.Node, clt *protocol.ClusterTable) {
 
 	bodyBuf := make([]byte, 4096)
 	var mr MessageReader = MessageReader{
@@ -77,7 +77,7 @@ func MessageHandler(conn *net.Conn, node *protocol.Node) {
 			fmt.Println("Process rpc message and payload")
 			fmt.Printf("Payload: %s\n", pl)
 			go func() {
-				err := node.RecvRPCMessage(header, pl, conn)
+				err := node.RecvRPCMessage(header, pl, conn, clt)
 				if err != nil {
 					fmt.Println(err)
 					return

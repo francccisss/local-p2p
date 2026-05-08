@@ -8,12 +8,12 @@ import (
 )
 
 // TODO: Maybe do a global cluster table instead of embedding the table in the Node itself
-func (n *Node) HandleFindClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn *net.Conn) error {
+func HandleFindClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn *net.Conn, clt *ClusterTable) error {
 	plcname := ClusterRequest(payload)
 	// will always send a string of cluster name to peer
 	fmt.Printf("Checking cluster table for '%s' cluster\n", plcname)
 	// it is always assumed that people that have the existing file should have an entry for cluster
-	cl, ok := (*n.ClusterTable)[ClusterName(plcname)]
+	cl, ok := (*clt)[ClusterName(plcname)]
 	// dont need to respond if does not exist anyways
 	if !ok {
 		fmt.Println("Cluster does not exist")
@@ -96,7 +96,7 @@ func HandlePingNodeRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn *n
 	return nil
 }
 
-func (n *Node) HandleLeechRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn *net.Conn) error {
+func HandleLeechRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn *net.Conn, FILE_LOCATION string) error {
 
 	// a call to leech received a single SegmentHeader
 	// a reply to leech receives an array of SegmentHeaders
@@ -106,7 +106,7 @@ func (n *Node) HandleLeechRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, 
 		fmt.Println("Unable to unmarshal data segment")
 		return err
 	}
-	en, path, err := Checkfile(fr.Hash, n.FILE_LOCATION)
+	en, path, err := Checkfile(fr.Hash, FILE_LOCATION)
 	if err != nil {
 		fmt.Println("Unable to unmarshal data segment")
 		newRPCMsg.Message = err.Error()
@@ -136,10 +136,10 @@ func (n *Node) HandleLeechRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, 
 	return nil
 }
 
-func (n *Node) HandleProbeRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn *net.Conn) error {
+func HandleProbeRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn *net.Conn, FILE_LOCATION string) error {
 
 	cname := string(payload)
-	status, meta, err := ProbeFile(n.FILE_LOCATION, ClusterName(cname))
+	status, meta, err := ProbeFile(FILE_LOCATION, ClusterName(cname))
 
 	if err != nil {
 		fmt.Printf("[PROBE REQUEST]: %s\n", err)

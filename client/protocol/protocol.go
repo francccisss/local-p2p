@@ -110,7 +110,7 @@ func ReadRPCMessage(buffer []byte) (RPCMsg, error) {
 	return msg, nil
 }
 
-func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn *net.Conn) error {
+func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn *net.Conn, clt *ClusterTable) error {
 
 	switch msg.RPCType {
 
@@ -134,15 +134,15 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn *net.Conn) error 
 		switch msg.Method {
 
 		case FIND_CLUSTER:
-			return n.HandleFindClusterRequest(newRPCMsg, msg, payload, conn)
+			return HandleFindClusterRequest(newRPCMsg, msg, payload, conn, clt)
 		case PING_CLUSTER:
 			return HandlePingClusterRequest(newRPCMsg, msg, payload, conn)
 		case PING_NODE:
 			return HandlePingNodeRequest(newRPCMsg, msg, payload, conn)
 		case LEECH:
-			return n.HandleLeechRequest(newRPCMsg, msg, payload, conn)
+			return HandleLeechRequest(newRPCMsg, msg, payload, conn, n.FILE_LOCATION)
 		case PROBE:
-			return n.HandleProbeRequest(newRPCMsg, msg, payload, conn)
+			return HandleProbeRequest(newRPCMsg, msg, payload, conn, n.FILE_LOCATION)
 		}
 	case REPLY: // when peers/nodes send a call RPCType
 
@@ -153,7 +153,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn *net.Conn) error 
 		switch msg.Method {
 
 		case FIND_CLUSTER:
-			return n.HandleFindClusterResponse(msg, payload, conn)
+			return HandleFindClusterResponse(msg, payload, conn, clt)
 
 		case LEECH:
 			return HandleLeechResponse(msg, payload, conn)
@@ -246,7 +246,7 @@ func (n *Node) PingNodes() error {
 }
 
 // Pinging cluster uses the existing TCP connections for communication
-func (n *Node) PingCluster(cname ClusterName) error {
+func (n *Node) PingCluster(cname ClusterName, clt *ClusterTable) error {
 
 	var newMsg RPCMsg = RPCMsg{
 		RPCType:    CALL,
@@ -260,7 +260,7 @@ func (n *Node) PingCluster(cname ClusterName) error {
 	binary.LittleEndian.PutUint32(newMsg.Port, uint32(n.Addr.Port))
 
 	// for bootstrapped nodes
-	c, ok := (*n.ClusterTable)[cname]
+	c, ok := (*clt)[cname]
 	if !ok {
 		return fmt.Errorf("Cluster not found")
 	}
@@ -281,8 +281,8 @@ func (n *Node) PingCluster(cname ClusterName) error {
 	return nil
 }
 
-func (n *Node) Probe(cname ClusterName) error {
-	c, ok := (*n.ClusterTable)[cname]
+func (n *Node) Probe(cname ClusterName, clt *ClusterTable) error {
+	c, ok := (*clt)[cname]
 	if !ok {
 		return fmt.Errorf("Cluster does not exist")
 	}
@@ -310,9 +310,9 @@ func (n *Node) Probe(cname ClusterName) error {
 
 }
 
-func (n *Node) Leech(cname ClusterName, spawnThreads bool, fr FileRequest) error {
+func (n *Node) Leech(cname ClusterName, spawnThreads bool, fr FileRequest, clt *ClusterTable) error {
 
-	c, ok := (*n.ClusterTable)[cname]
+	c, ok := (*clt)[cname]
 	if !ok {
 		return fmt.Errorf("Cluster does not exist")
 	}

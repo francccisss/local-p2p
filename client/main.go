@@ -45,11 +45,11 @@ func main() {
 	}
 
 	node := protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: addr.Port}, protocol.NodeID(nodeID.String()), FILE_LOCATION)
-	node.ClusterTable = protocol.CreateclusterTable()
+	newClusterTable := protocol.CreateclusterTable()
 
 	// blocking handler
 	// TODO: create context for this function handler so that we can cancel through process interrupts
-	err = connection.HandleConn(&l, node)
+	err = connection.HandleConn(&l, node, newClusterTable)
 	if err != nil {
 		fmt.Println(err)
 
