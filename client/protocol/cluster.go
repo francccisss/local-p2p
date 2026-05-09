@@ -18,11 +18,13 @@ type ClusterPeerThread struct {
 	BytesReceived int
 }
 
+// calling Join() sets the TCP connection for the peers in the cluster
 type ClusterPeer struct {
 	Addr   NodeAddr
 	NodeID NodeID
 	Conn   *net.TCPConn
 }
+
 type Cluster struct {
 	ClusterPeerThreads map[NodeID]*ClusterPeerThread // keep track of peers
 	ClusterName        ClusterName

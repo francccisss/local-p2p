@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -72,6 +71,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 
 		case FIND_CLUSTER:
 			b, err := HandleFindClusterRequest(newRPCMsg, msg, payload, clt)
+			// Sends an error that a cluster does not exist
 			if err != nil {
 				newRPCMsg.StatusCode = ERROR
 				newRPCMsg.Message = err.Error()
@@ -105,7 +105,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 		case PING_NODE:
 			pingResponse := HandlePingNodeResponse(msg, payload)
 			fmt.Printf("Retrived Ping reponse %+v", pingResponse)
-			(*conn).Close()
+			conn.Close()
 		case PING_CLUSTER:
 			pingResponse := HandlePingClusterResponse(msg, payload)
 			fmt.Printf("Retrived Ping reponse %+v", pingResponse)
@@ -141,39 +141,47 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 // METHODS FOR RPC CALLS
 // ----------------------
 
-func (n *Node) FindCluster(cname ClusterName) {
+func (n *Node) FindCluster(cname ClusterName) error {
 
 	var wg sync.WaitGroup
 
-	payload := []byte(cname)
+	payload := ClusterRequest(cname)
 	newMsg := RPCMsg{
-		NodeID:      n.NodeID,
-		Message:     "where cluster?",
-		Method:      FIND_CLUSTER,
-		RPCType:     CALL,
-		IP:          n.Addr.IP,
-		PayloadSize: uint32(len(payload)),
+		NodeID:  n.NodeID,
+		Message: "where cluster?",
+		Method:  FIND_CLUSTER,
+		RPCType: CALL,
+		IP:      n.Addr.IP,
+		Port:    make([]byte, 4),
 	}
 	binary.LittleEndian.PutUint32(newMsg.Port, uint32(n.Addr.Port))
 
+	b, err := WrapPayloadToBuffer(newMsg, []byte(payload))
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("DOUBLE CHECK BUFFER")
 	for _, n := range n.NeighboringNodes {
 		wg.Go(func() {
-			conn, err := net.Dial("tcp", string(n.IP)+":"+strconv.Itoa(n.Port))
+			// BRUUUHHH
+			// conn, err := net.Dial("tcp", string(n.IP)+":"+strconv.Itoa(n.Port))
+			// if err != nil {
+			// 	fmt.Printf("FIND CLUSTER ERROR: %s", n.NodeID)
+			// 	fmt.Println(err)
+			// 	return
+			// }
+			_, err := n.Conn.Write(b)
 			if err != nil {
 				fmt.Printf("FIND CLUSTER ERROR: %s", n.NodeID)
 				fmt.Println(err)
-				return
-			}
-			err = json.NewEncoder(conn).Encode(newMsg)
-			if err != nil {
-				fmt.Printf("FIND CLUSTER ERROR: %s", n.NodeID)
-				fmt.Println(err)
-				return
-
 			}
 		})
 	}
+	wg.Wait()
+	fmt.Println("Sent FIND CLUSTER request to neighboring nodes")
 
+	return nil
 }
 
 // The difference between PingCluster & PingNodes is pretty self explanatory
@@ -362,32 +370,35 @@ func ProbeFile(FILE_LOCATION string, cname ClusterName) (StatusCode, FileMetaDat
 // Wraps the RPCMsg and the payload into a buffer and returns it
 func WrapPayloadToBuffer(msg RPCMsg, payload []byte) ([]byte, error) {
 	msg.PayloadSize = uint32(len(payload))
-	fmt.Printf("Size of payload: %d\n", msg.PayloadSize)
 	b, err := json.Marshal(msg)
 	if err != nil {
 		return nil, err
 	}
 
+	// where header append?
 	buf := make([]byte, PREFIX_HEADER_SIZE, len(b)+PREFIX_HEADER_SIZE)
-	fmt.Printf("META JSON SIZE: %d\n", len(b))
 
+	fmt.Printf("HEADER SIZE: %d\n", PREFIX_HEADER_SIZE)
 	// creates a header for th json metadata
 	binary.LittleEndian.PutUint32(buf, uint32(len(b)))
+	fmt.Printf("META JSON SIZE: %d\n", len(b))
+
+	fmt.Printf("PAYLOAD SIZE: %d\n", len(payload))
 
 	// appends marshaled json after getting len of the msg header
 	buf = append(buf, b...)
 	if payload != nil {
 		// appends the payload
 		buf = append(buf, payload...)
-		fmt.Printf("PAYLOAD SIZE: %d\n", len(payload))
 	}
+	fmt.Printf("Total Message Size: %d\n", len(buf))
 
 	return buf, nil
 }
 
 func SendViaExistingConn(message []byte, conn io.ReadWriteCloser) error {
 
-	_, err := (conn).Write(message)
+	_, err := conn.Write(message)
 	if err != nil {
 		return err
 	}

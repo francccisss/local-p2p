@@ -3,15 +3,15 @@ package test
 import (
 	"client/connection"
 	"client/protocol"
+	"encoding/json"
 	"fmt"
 	"net"
 	"testing"
 )
 
-var node *protocol.Node
-
 func TestClientConnection(t *testing.T) {
 
+	var node *protocol.Node
 	addr := net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 3030}
 
 	node = protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: 3030}, "pinger", "")
@@ -41,22 +41,22 @@ func TestClientConnection(t *testing.T) {
 }
 
 type clusterBuff struct {
-	buf []byte
+	buf chan []byte
+	n   int // current byte index to buffer
 }
 
-//	type clusterRW interface {
-//		Read(p []byte) (n int, err error)
-//		Write(p []byte) (n int, err error)
-//		Close() error
-//	}
 func (clb *clusterBuff) Read(p []byte) (n int, err error) {
-	copy(p, clb.buf)
-	clb.buf = clb.buf[len(p):]
-	return len(p), nil
+	// it reads all of clb.buf into
+	rb := <-clb.buf
+	fmt.Printf("READ FROM BUF TO P %d\n", len(rb))
+	readBytes := copy(p, rb[:clb.n])
+	return readBytes, nil
 }
 
 func (clb *clusterBuff) Write(p []byte) (n int, err error) {
-	copy(clb.buf, p)
+	fmt.Printf("WROTE TO BUFF %d\n", len(p))
+	clb.buf <- p
+	clb.n = len(p)
 	return len(p), nil
 }
 func (clb *clusterBuff) Close() error {
@@ -66,20 +66,69 @@ func (clb *clusterBuff) Close() error {
 func TestClusterSearch(t *testing.T) {
 	var clusterName protocol.ClusterName = "vim-boys"
 
-	addr := net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 3030}
-	clb := clusterBuff{buf: make([]byte, 4096)}
-
-	// different go routine that sends request to receiver node
-	clientNode := protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: 3030}, "requester", "")
-	clientNode.NeighboringNodes = append(clientNode.NeighboringNodes, protocol.NodeAddr{IP: addr.IP, Port: 5656, Conn: &clb})
-	clientNode.FindCluster(clusterName)
+	addr := net.TCPAddr{IP: net.ParseIP("127.0.0.1")}
+	rclb := clusterBuff{buf: make(chan []byte, 1), n: 0}
 
 	receiverNode := protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: 5656}, "receiver", "")
 	recvclt := protocol.CreateClusterTable()
 	(*recvclt)[clusterName] = protocol.CreateCluster(clusterName)
 
-	for {
-		connection.MessageHandler(&clb, receiverNode, recvclt)
+	// different go routine that sends request to receiver node
+	clientNode := protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: 3030}, "requester", "")
+	clientNode.NeighboringNodes = append(clientNode.NeighboringNodes, protocol.NodeAddr{IP: addr.IP, Port: 5656, Conn: &rclb})
+	// clientclt := protocol.CreateClusterTable()
+
+	// sends message rclb using json encoder
+	clientNode.FindCluster(clusterName)
+
+	// will output from the same node since its using the same buffer from where it wrote to
+	// so it doesnt matter and i dont care
+
+	// receives data from clientNode
+	connection.MessageHandler(&rclb, receiverNode, recvclt)
+	// send back response to find cluster method via writing into recvclit
+}
+
+func TestJoinCluster(t *testing.T) {
+	var clusterName protocol.ClusterName = "vim-boys"
+
+	addr := net.TCPAddr{IP: net.ParseIP("127.0.0.1")}
+	rclb := clusterBuff{buf: make(chan []byte, 1), n: 0}
+
+	receiverNode := protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: 5656}, "receiver", "")
+	recvclt := protocol.CreateClusterTable()
+	(*recvclt)[clusterName] = protocol.CreateCluster(clusterName)
+
+	// different go routine that sends request to receiver node
+	clientNode := protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: 3030}, "requester", "")
+	clientNode.NeighboringNodes = append(clientNode.NeighboringNodes, protocol.NodeAddr{IP: addr.IP, Port: 5656, Conn: &rclb})
+	// clientclt := protocol.CreateClusterTable()
+
+	// sends message rclb using json encoder
+	clientNode.JoinCluster(clusterName)
+
+	// will output from the same node since its using the same buffer from where it wrote to
+	// so it doesnt matter and i dont care
+
+	bodyBuf := make([]byte, 4096)
+
+	var mr connection.MessageReader = connection.MessageReader{
+		PayloadBuffer: make([]byte, 0, 4096),
+		JsonBuffer:    make([]byte, 0, 4096),
+		State:         connection.PROCESSING,
+	}
+	rclb.Read(bodyBuf)
+	// receives data from clientNode
+	msg, pl, err := mr.ExtractMessage(bodyBuf)
+	if err != nil {
+		t.FailNow()
+	}
+
+	// read and sends back response to find cluster method via writing into recvclt
+	err = receiverNode.RecvRPCMessage(msg, pl, &rclb, recvclt)
+
+	if err != nil {
+		t.FailNow()
 	}
 
 }

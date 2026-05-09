@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -62,12 +63,16 @@ func HandleLeechResponse(msg RPCMsg, payload []byte, conn io.ReadWriteCloser) er
 	// return nil
 }
 
+// if a node contains the peers to a cluster, then that means that the current node is also
+// included in that cluster as a peer
 func HandleFindClusterResponse(msg RPCMsg, payload []byte, clt *ClusterTable) (*ClusterResponse, error) {
 	cr := &ClusterResponse{}
 	err := json.Unmarshal(payload, cr)
 	if err != nil {
 		return nil, err
 	}
+	// appends the node that returned
+	cr.Peers = append(cr.Peers, ClusterPeer{Addr: NodeAddr{IP: msg.IP, Port: int(binary.LittleEndian.Uint32(msg.Port))}, NodeID: msg.NodeID})
 	if msg.StatusCode == ERROR {
 		rpcError := RPCErrorStr{ErrorMessage: msg.Message}
 		return nil, rpcError
