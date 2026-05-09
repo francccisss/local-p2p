@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -24,7 +25,7 @@ func ReadRPCMessage(buffer []byte) (RPCMsg, error) {
 	return msg, nil
 }
 
-func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn *net.Conn, clt *ClusterTable) error {
+func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteCloser, clt *ClusterTable) error {
 
 	switch msg.RPCType {
 
@@ -384,9 +385,9 @@ func WrapPayloadToBuffer(msg RPCMsg, payload []byte) ([]byte, error) {
 	return buf, nil
 }
 
-func SendViaExistingConn(message []byte, conn *net.Conn) error {
+func SendViaExistingConn(message []byte, conn io.ReadWriteCloser) error {
 
-	_, err := (*conn).Write(message)
+	_, err := (conn).Write(message)
 	if err != nil {
 		return err
 	}

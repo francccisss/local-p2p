@@ -3,7 +3,7 @@ package protocol
 import (
 	"encoding/json"
 	"fmt"
-	"net"
+	"io"
 )
 
 func HandleFindClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, clt *ClusterTable) ([]byte, error) {
@@ -64,7 +64,7 @@ func HandlePingNodeRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte) ([]byte
 	return b, nil
 }
 
-func HandleLeechRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn *net.Conn, FILE_LOCATION string) error {
+func HandleLeechRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn io.ReadWriteCloser, FILE_LOCATION string) error {
 
 	// a call to leech received a single SegmentHeader
 	// a reply to leech receives an array of SegmentHeaders
@@ -104,7 +104,7 @@ func HandleLeechRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn *net.
 	return nil
 }
 
-func HandleProbeRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn *net.Conn, FILE_LOCATION string) error {
+func HandleProbeRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn io.ReadWriteCloser, FILE_LOCATION string) error {
 
 	cname := string(payload)
 	status, meta, err := ProbeFile(FILE_LOCATION, ClusterName(cname))

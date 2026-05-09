@@ -1,6 +1,8 @@
 package protocol
 
-import "net"
+import (
+	"io"
+)
 
 type PeerStatus int
 
@@ -16,7 +18,7 @@ type NodeAddr struct {
 	NodeID
 	IP   []byte
 	Port int
-	Conn *net.TCPConn
+	Conn io.ReadWriteCloser
 }
 
 type Node struct {

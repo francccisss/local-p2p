@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 )
 
@@ -43,11 +44,11 @@ func HandleConn(l *net.Listener, node *protocol.Node, clt *protocol.ClusterTable
 			fmt.Printf("Connection from %s failed\n", conn.LocalAddr().String())
 			return err
 		}
-		go MessageHandler(&conn, node, clt)
+		go MessageHandler(conn, node, clt)
 	}
 }
 
-func MessageHandler(conn *net.Conn, node *protocol.Node, clt *protocol.ClusterTable) {
+func MessageHandler(conn io.ReadWriteCloser, node *protocol.Node, clt *protocol.ClusterTable) {
 
 	bodyBuf := make([]byte, 4096)
 	var mr MessageReader = MessageReader{
@@ -58,11 +59,11 @@ func MessageHandler(conn *net.Conn, node *protocol.Node, clt *protocol.ClusterTa
 	fmt.Printf("Received TCP Connection: %+v\n", conn)
 	for {
 		// Reads from the file descriptor set by the kernel for the node that was accepted
-		n, err := (*conn).Read(bodyBuf)
+		n, err := conn.Read(bodyBuf)
 		if n == 0 {
 			return
 		}
-		defer (*conn).Close()
+		defer conn.Close()
 		if err != nil {
 			return
 		}

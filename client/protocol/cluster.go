@@ -37,7 +37,7 @@ type Peer struct {
 
 type ClusterTable map[ClusterName]*Cluster
 
-func CreateclusterTable() *ClusterTable {
+func CreateClusterTable() *ClusterTable {
 	clt := make(ClusterTable)
 	return &clt
 

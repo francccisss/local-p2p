@@ -3,7 +3,7 @@ package protocol
 import (
 	"encoding/json"
 	"fmt"
-	"net"
+	"io"
 )
 
 func HandlePingNodeResponse(msg RPCMsg, payload []byte) PingResponse {
@@ -15,7 +15,7 @@ func HandlePingClusterResponse(msg RPCMsg, payload []byte) PingResponse {
 	fmt.Printf("Ping received from %s\n", msg.NodeID)
 	return PingResponse(payload)
 }
-func HandleLeechResponse(msg RPCMsg, payload []byte, conn *net.Conn) error {
+func HandleLeechResponse(msg RPCMsg, payload []byte, conn io.ReadWriteCloser) error {
 	return nil
 	// // match the clustername and then the NodeID that sent the request
 	// c, ok := (*clt)[seg.ClusterName]
