@@ -56,6 +56,7 @@ func CreateCluster(cname ClusterName) *Cluster {
 
 }
 
+// returns the added cluster peer, but can also be ignored
 func (cl *Cluster) NewClusterPeer(addr NodeAddr, nodeID NodeID) *ClusterPeer {
 	for _, cp := range cl.ClusterPeers {
 		if cp.NodeID != nodeID {

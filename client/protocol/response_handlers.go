@@ -6,31 +6,19 @@ import (
 	"net"
 )
 
-func HandlePingNodeResponse(msg RPCMsg, payload []byte, conn *net.Conn) error {
-
-	var pingMsg PingResponse = PingResponse(payload)
-	fmt.Printf("Payload PingResponse-%s\n", pingMsg)
+func HandlePingNodeResponse(msg RPCMsg, payload []byte) PingResponse {
 	fmt.Printf("Message: %s\n", msg.Message)
-	(*conn).Close()
-	return nil
+	return PingResponse(payload)
 }
 
-func HandlePingClusterResponse(msg RPCMsg, payload []byte) error {
-	// When receivers of the call responds/reply back to this
-	// process, create a new cluster with name and initialize
-	// pear threads and assign a peer thread that corresponds
-	// with the receiver's NodeID that it send from PING
-
+func HandlePingClusterResponse(msg RPCMsg, payload []byte) PingResponse {
 	fmt.Printf("Ping received from %s\n", msg.NodeID)
-	var pingMsg PingResponse = PingResponse(payload)
-	fmt.Println(pingMsg)
-	fmt.Println("Pong")
-	return nil
+	return PingResponse(payload)
 }
 func HandleLeechResponse(msg RPCMsg, payload []byte, conn *net.Conn) error {
 	return nil
 	// // match the clustername and then the NodeID that sent the request
-	// c, ok := (*n.ClusterTable)[seg.ClusterName]
+	// c, ok := (*clt)[seg.ClusterName]
 	// if !ok {
 	// 	return fmt.Errorf("Cluster does not exist")
 	// }
@@ -74,27 +62,17 @@ func HandleLeechResponse(msg RPCMsg, payload []byte, conn *net.Conn) error {
 	// return nil
 }
 
-func (n *Node) HandleFindClusterResponse(msg RPCMsg, payload []byte, conn *net.Conn) error {
-	gcr := &ClusterResponse{}
-	err := json.Unmarshal(payload, gcr)
+func HandleFindClusterResponse(msg RPCMsg, payload []byte, clt *ClusterTable) (*ClusterResponse, error) {
+	cr := &ClusterResponse{}
+	err := json.Unmarshal(payload, cr)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if msg.StatusCode == ERROR {
-		return fmt.Errorf("[REPLY]: FIND CLUSTER ERROR - %s", msg.Message)
+		rpcError := RPCErrorStr{ErrorMessage: msg.Message}
+		return nil, rpcError
 	}
-
-	cl, ok := (*n.ClusterTable)[gcr.ClusterName]
-	if !ok {
-		fmt.Printf("Cluster oes not exist creating local cluster for %s\n", gcr.ClusterName)
-		(*n.ClusterTable)[gcr.ClusterName] = CreateCluster(gcr.ClusterName)
-		cl = (*n.ClusterTable)[gcr.ClusterName]
-	}
-	for _, p := range gcr.Peers {
-		cl.NewClusterPeer(p.Addr, p.NodeID)
-	}
-	fmt.Printf("[REPLY]: FIND CLUSTER - %d new peers added to %s cluster\n", len(cl.ClusterPeers), cl.ClusterName)
-	return nil
+	return cr, nil
 }
 func HandleProbeResponse(msg RPCMsg, payload []byte) error {
 

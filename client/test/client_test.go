@@ -16,6 +16,7 @@ func TestClientConnection(t *testing.T) {
 
 	node = protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: 3030}, "pinger", "")
 	node.NeighboringNodes = append(node.NeighboringNodes, protocol.NodeAddr{IP: net.ParseIP("127.0.0.1"), Port: 5656})
+	newClusterTable := protocol.CreateclusterTable()
 	fmt.Println("Pinging Nodes")
 	err := node.PingNodes()
 	if err != nil {
@@ -31,7 +32,7 @@ func TestClientConnection(t *testing.T) {
 		t.FailNow()
 	}
 	for {
-		if err := connection.HandleConn(&listener, node); err != nil {
+		if err := connection.HandleConn(&listener, node, newClusterTable); err != nil {
 			fmt.Println("[TEST]: ERROR Listener")
 			fmt.Println(err)
 			t.FailNow()

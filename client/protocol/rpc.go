@@ -47,17 +47,52 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn *net.Conn, clt *C
 		binary.LittleEndian.PutUint32(newRPCMsg.Port, uint32(n.Addr.Port))
 		switch msg.Method {
 
-		case FIND_CLUSTER:
-			return HandleFindClusterRequest(newRPCMsg, msg, payload, conn, clt)
-		case PING_CLUSTER:
-			return HandlePingClusterRequest(newRPCMsg, msg, payload, conn)
 		case PING_NODE:
-			return HandlePingNodeRequest(newRPCMsg, msg, payload, conn)
-		case LEECH:
-			return HandleLeechRequest(newRPCMsg, msg, payload, conn, n.FILE_LOCATION)
+			requstNodePort := binary.LittleEndian.Uint32(msg.Port)
+			requestNodeAddr := NodeAddr{IP: msg.IP, Port: int(requstNodePort)}
+			b, err := HandlePingNodeRequest(newRPCMsg, msg, payload)
+			if err != nil {
+				return ProtocolErrorWrap(err.Error(), CALL, PING_NODE)
+			}
+			err = SendMsg(b, requestNodeAddr)
+			if err != nil {
+				return ProtocolErrorWrap(err.Error(), CALL, PING_NODE)
+			}
+
+		case PING_CLUSTER:
+			b, err := HandlePingClusterRequest(newRPCMsg, msg, payload)
+			if err != nil {
+				return ProtocolErrorWrap(err.Error(), CALL, PING_CLUSTER)
+			}
+			err = SendViaExistingConn(b, conn)
+			if err != nil {
+				return ProtocolErrorWrap(err.Error(), CALL, PING_CLUSTER)
+			}
+
+		case FIND_CLUSTER:
+			b, err := HandleFindClusterRequest(newRPCMsg, msg, payload, clt)
+			if err != nil {
+				newRPCMsg.StatusCode = ERROR
+				newRPCMsg.Message = err.Error()
+				b, err := WrapPayloadToBuffer(newRPCMsg, nil)
+				err = SendViaExistingConn(b, conn)
+				return ProtocolErrorWrap(err.Error(), CALL, FIND_CLUSTER)
+			}
+
+			err = SendViaExistingConn(b, conn)
+			if err != nil {
+				fmt.Println("Unable to respond to ping")
+				return ProtocolErrorWrap(err.Error(), CALL, FIND_CLUSTER)
+			}
+		case JOIN:
+
 		case PROBE:
 			return HandleProbeRequest(newRPCMsg, msg, payload, conn, n.FILE_LOCATION)
+
+		case LEECH:
+			return HandleLeechRequest(newRPCMsg, msg, payload, conn, n.FILE_LOCATION)
 		}
+
 	case REPLY: // when peers/nodes send a call RPCType
 
 		if msg.StatusCode == ERROR {
@@ -66,23 +101,37 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn *net.Conn, clt *C
 
 		switch msg.Method {
 
+		case PING_NODE:
+			pingResponse := HandlePingNodeResponse(msg, payload)
+			fmt.Printf("Retrived Ping reponse %+v", pingResponse)
+			(*conn).Close()
+		case PING_CLUSTER:
+			pingResponse := HandlePingClusterResponse(msg, payload)
+			fmt.Printf("Retrived Ping reponse %+v", pingResponse)
 		case FIND_CLUSTER:
-			return HandleFindClusterResponse(msg, payload, conn, clt)
+			cr, err := HandleFindClusterResponse(msg, payload, clt)
+			if err != nil {
+				return ProtocolErrorWrap(err.Error(), REPLY, FIND_CLUSTER)
+			}
+			cl, ok := (*clt)[cr.ClusterName]
+			if !ok {
+				fmt.Printf("Cluster does not exist creating local cluster for %s\n", cr.ClusterName)
+				(*clt)[cr.ClusterName] = CreateCluster(cr.ClusterName)
+				cl = (*clt)[cr.ClusterName]
+			}
+			for _, p := range cr.Peers {
+				cl.NewClusterPeer(p.Addr, p.NodeID)
+			}
+			fmt.Printf("[REPLY]: FIND CLUSTER - %d new peers added to %s cluster\n", len(cl.ClusterPeers), cl.ClusterName)
+		case JOIN:
 
 		case LEECH:
 			return HandleLeechResponse(msg, payload, conn)
 
-		case PING_NODE:
-			return HandlePingNodeResponse(msg, payload, conn)
-		case PING_CLUSTER:
-
-			return HandlePingClusterResponse(msg, payload)
 		case PROBE:
 			return HandleProbeResponse(msg, payload)
 
 		}
-		fmt.Println("Reply from Call Message")
-	default:
 	}
 	return nil
 }
@@ -280,25 +329,56 @@ func (n *Node) Leech(cname ClusterName, spawnThreads bool, fr FileRequest, clt *
 	return nil
 }
 
-// Need to set little endian of ip and port due to int values
+// TODO: add checksum parameter passed in by caller
+// each file corresponds to a cluster name
+
+func ProbeFile(FILE_LOCATION string, cname ClusterName) (StatusCode, FileMetaData, error) {
+
+	entry, path, err := Checkfile(string(cname), FILE_LOCATION)
+	if err != nil {
+		return ERROR, FileMetaData{}, err
+	}
+
+	file, err := entry.Info()
+	if err != nil {
+		return ERROR, FileMetaData{}, err
+	}
+	// obviously need to use the absolute route to the file
+	// reuse wd prefix? hmmm
+	fmt.Printf("Absolute Path: %s\n", path)
+	fileBuffer, err := os.ReadFile(path + file.Name())
+
+	if err != nil {
+		return ERROR, FileMetaData{}, err
+	}
+
+	fmt.Printf("file length: %d\n", len(fileBuffer))
+
+	// check data integrity of file using checksum
+	return SUCCESS, FileMetaData{Name: file.Name(), Hash: string(cname), Size: uint64(file.Size())}, nil
+}
+
+// Wraps the RPCMsg and the payload into a buffer and returns it
 func WrapPayloadToBuffer(msg RPCMsg, payload []byte) ([]byte, error) {
+	msg.PayloadSize = uint32(len(payload))
+	fmt.Printf("Size of payload: %d\n", msg.PayloadSize)
 	b, err := json.Marshal(msg)
 	if err != nil {
 		return nil, err
 	}
 
 	buf := make([]byte, PREFIX_HEADER_SIZE, len(b)+PREFIX_HEADER_SIZE)
-	fmt.Printf("meta json size: %d\n", len(b))
+	fmt.Printf("META JSON SIZE: %d\n", len(b))
 
 	// creates a header for th json metadata
 	binary.LittleEndian.PutUint32(buf, uint32(len(b)))
 
-	// appends marshaled json after getting len
+	// appends marshaled json after getting len of the msg header
 	buf = append(buf, b...)
 	if payload != nil {
 		// appends the payload
 		buf = append(buf, payload...)
-		fmt.Printf("payload size: %d\n", len(payload))
+		fmt.Printf("PAYLOAD SIZE: %d\n", len(payload))
 	}
 
 	return buf, nil
@@ -347,33 +427,4 @@ func ProtocolErrorWrap(errStr string, msgType MsgType, methodType Method) error 
 	default:
 		panic("MsgType not either CALL | REPLY types")
 	}
-}
-
-// TODO: add checksum parameter passed in by caller
-// each file corresponds to a cluster name
-
-func ProbeFile(FILE_LOCATION string, cname ClusterName) (StatusCode, FileMetaData, error) {
-
-	entry, path, err := Checkfile(string(cname), FILE_LOCATION)
-	if err != nil {
-		return ERROR, FileMetaData{}, err
-	}
-
-	file, err := entry.Info()
-	if err != nil {
-		return ERROR, FileMetaData{}, err
-	}
-	// obviously need to use the absolute route to the file
-	// reuse wd prefix? hmmm
-	fmt.Printf("Absolute Path: %s\n", path)
-	fileBuffer, err := os.ReadFile(path + file.Name())
-
-	if err != nil {
-		return ERROR, FileMetaData{}, err
-	}
-
-	fmt.Printf("file length: %d\n", len(fileBuffer))
-
-	// check data integrity of file using checksum
-	return SUCCESS, FileMetaData{Name: file.Name(), Hash: string(cname), Size: uint64(file.Size())}, nil
 }

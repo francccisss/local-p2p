@@ -1,14 +1,12 @@
 package protocol
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net"
 )
 
-// TODO: Maybe do a global cluster table instead of embedding the table in the Node itself
-func HandleFindClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn *net.Conn, clt *ClusterTable) error {
+func HandleFindClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, clt *ClusterTable) ([]byte, error) {
 	plcname := ClusterRequest(payload)
 	// will always send a string of cluster name to peer
 	fmt.Printf("Checking cluster table for '%s' cluster\n", plcname)
@@ -16,15 +14,7 @@ func HandleFindClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn
 	cl, ok := (*clt)[ClusterName(plcname)]
 	// dont need to respond if does not exist anyways
 	if !ok {
-		fmt.Println("Cluster does not exist")
-		newRPCMsg.StatusCode = ERROR
-		newRPCMsg.Message = fmt.Sprintf("Cluster %s does not exist", plcname)
-		b, err := WrapPayloadToBuffer(newRPCMsg, nil)
-		err = SendViaExistingConn(b, conn)
-		if err != nil {
-			return err
-		}
-		return fmt.Errorf("Unable to deliver reply from FIND CLUSTER CALL")
+		return nil, fmt.Errorf("Cluster - %s does not exist", plcname)
 	}
 
 	fmt.Printf("Cluster '%s' exists\n", plcname)
@@ -40,60 +30,38 @@ func HandleFindClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn
 	}
 	b, err := json.Marshal(newResponse)
 	if err != nil {
-		return err
+		return nil, err
+
 	}
 	buff, err := WrapPayloadToBuffer(newRPCMsg, b)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	err = SendViaExistingConn(buff, conn)
-
-	if err != nil {
-		fmt.Println("Unable to respond to ping")
-		return err
-	}
-	return nil
+	return buff, nil
 }
 
-func HandlePingClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn *net.Conn) error {
+func HandlePingClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte) ([]byte, error) {
 
-	// sender triggers a ping on receiver(this)
-	// receiver sends their NodeID in return
-	// so that the sender can keep track of the receivers
 	newRPCMsg.Message = "Pong"
 	pr := PingRequest(payload)
 	fmt.Printf("[CALL]: PING - pinged by neighboring node %s\n", pr)
 
 	var newPingResponse PingResponse = PingResponse(NodeStatusMap[ACTIVE]) // interesting unnessary type assertion
-
 	b, err := WrapPayloadToBuffer(newRPCMsg, []byte(newPingResponse))
 	if err != nil {
-		return ProtocolErrorWrap(err.Error(), CALL, PING_CLUSTER)
+		return nil, err
 	}
-	err = SendViaExistingConn(b, conn)
-	if err != nil {
-		return ProtocolErrorWrap(err.Error(), CALL, PING_CLUSTER)
-	}
-	fmt.Println("Ping")
-	return nil
+	return b, nil
 }
 
-func HandlePingNodeRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn *net.Conn) error {
+func HandlePingNodeRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte) ([]byte, error) {
 	var newPingResponse PingResponse = PingResponse(NodeStatusMap[ACTIVE])
 	newRPCMsg.Message = "Pong"
-	fmt.Printf("Sending Ping reponse %s, in bytes %b\n", newPingResponse, []byte(newPingResponse))
-	newRPCMsg.PayloadSize = uint32(len([]byte(newPingResponse)))
 	b, err := WrapPayloadToBuffer(newRPCMsg, []byte(newPingResponse))
 	if err != nil {
-		return ProtocolErrorWrap(err.Error(), CALL, PING_NODE)
+		return nil, err
 	}
-	requstNodePort := binary.LittleEndian.Uint32(msg.Port)
-	requestNodeAddr := NodeAddr{IP: msg.IP, Port: int(requstNodePort)}
-	err = SendMsg(b, requestNodeAddr)
-	if err != nil {
-		return ProtocolErrorWrap(err.Error(), CALL, PING_NODE)
-	}
-	return nil
+	return b, nil
 }
 
 func HandleLeechRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn *net.Conn, FILE_LOCATION string) error {

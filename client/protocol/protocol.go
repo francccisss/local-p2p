@@ -6,31 +6,22 @@ type MethodString string
 const (
 	PING_NODE Method = iota
 	PING_CLUSTER
-	LEECH
-	PROBE
-	JOIN
 	FIND_CLUSTER
+	JOIN
+	PROBE
+	LEECH
 )
 
 var MethodStringMap = map[Method]MethodString{
 	0: "PING NODE",
 	1: "PING CLUSTER",
-	2: "LEECH",
-	3: "PROBE",
-	4: "JOIN",
-	5: "FIND CLUSTER",
+	2: "FIND CLUSTER",
+	3: "JOIN",
+	4: "PROBE",
+	5: "LEECH",
 }
 
 const PREFIX_HEADER_SIZE = 4
-
-type ClientConn interface {
-	FindCluster(cname ClusterName)
-	Join()
-	Ping(cname ClusterName) error
-	Leech(cname ClusterName, spawnThreads bool, fr FileRequest) error
-	ProbeFile(fileKey string) (StatusCode, error)
-	RecvRPCMessage(msg RPCMsg) error
-}
 
 type MsgType uint32
 
@@ -38,6 +29,17 @@ const (
 	CALL MsgType = iota
 	REPLY
 )
+
+type NodeStatus string
+type NodeStatusEnum int
+
+const (
+	ACTIVE NodeStatusEnum = iota
+)
+
+var NodeStatusMap = map[NodeStatusEnum]NodeStatus{
+	0: "ACTIVE",
+}
 
 type StatusCode int
 
@@ -65,16 +67,13 @@ type ClusterResponse struct {
 	Peers []ClusterPeer
 }
 
-type NodeStatus string
-type NodeStatusEnum int
-
-const (
-	ACTIVE NodeStatusEnum = iota
-)
-
-var NodeStatusMap = map[NodeStatusEnum]NodeStatus{
-	0: "ACTIVE",
-}
-
 type PingResponse NodeStatus
 type PingRequest string
+
+type RPCErrorStr struct {
+	ErrorMessage string
+}
+
+func (re RPCErrorStr) Error() string {
+	return re.ErrorMessage
+}
