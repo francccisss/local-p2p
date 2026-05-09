@@ -67,8 +67,14 @@ type ClusterResponse struct {
 	Peers []ClusterPeer
 }
 
-type PingResponse NodeStatus
 type PingRequest string
+type PingResponse NodeStatus
+
+type JoinRequest ClusterName
+
+type JoinResponse struct {
+	Status PeerStatus
+}
 
 type RPCErrorStr struct {
 	ErrorMessage string

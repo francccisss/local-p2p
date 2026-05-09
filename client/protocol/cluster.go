@@ -3,8 +3,8 @@ package protocol
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
-	"net"
 	"time"
 )
 
@@ -22,7 +22,8 @@ type ClusterPeerThread struct {
 type ClusterPeer struct {
 	Addr   NodeAddr
 	NodeID NodeID
-	Conn   *net.TCPConn
+	Conn   io.ReadWriteCloser
+	Status PeerStatus
 }
 
 type Cluster struct {
@@ -71,6 +72,8 @@ func (cl *Cluster) NewClusterPeer(addr NodeAddr, nodeID NodeID) *ClusterPeer {
 	newClusterPeer := &ClusterPeer{
 		Addr:   addr,
 		NodeID: nodeID,
+		Conn:   nil,
+		Status: IDLE,
 	}
 
 	cl.ClusterPeers = append(cl.ClusterPeers, *newClusterPeer)

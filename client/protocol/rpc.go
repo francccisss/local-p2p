@@ -282,6 +282,33 @@ func (n *Node) Probe(cname ClusterName, clt *ClusterTable) error {
 
 }
 
+func (n *Node) JoinCluster(clt Cluster) error {
+
+	newMsg := RPCMsg{
+		NodeID:  n.NodeID,
+		IP:      n.Addr.IP,
+		Port:    make([]byte, 4),
+		Message: "Joining cluster",
+		Method:  JOIN,
+		RPCType: CALL,
+	}
+	joinReq := clt.ClusterName
+	binary.LittleEndian.PutUint32(newMsg.Port, uint32(n.Addr.Port))
+	b, err := WrapPayloadToBuffer(newMsg, []byte(joinReq))
+	if err != nil {
+		return err
+	}
+
+	for _, nc := range clt.ClusterPeers {
+		_, err := nc.Conn.Write(b)
+		if err != nil {
+			continue
+		}
+	}
+
+	return nil
+}
+
 func (n *Node) Leech(cname ClusterName, spawnThreads bool, fr FileRequest, clt *ClusterTable) error {
 
 	c, ok := (*clt)[cname]
