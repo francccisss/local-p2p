@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -102,6 +103,41 @@ func HandleLeechRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn io.Re
 		return err
 	}
 	return nil
+}
+
+func HandleJoinClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn io.ReadWriteCloser, clt *ClusterTable) ([]byte, error) {
+	clusterName := JoinRequest(payload)
+
+	cl, ok := (*clt)[clusterName]
+	if !ok {
+		return nil, fmt.Errorf("'Cluster %s does not exist'\n", clusterName)
+	}
+
+	fmt.Printf("[CALL]: JOIN - 'Adding new peer to %s cluster\n", cl.ClusterName)
+	ncp := cl.NewClusterPeer(NodeAddr{IP: msg.IP, Port: int(binary.LittleEndian.Uint32(msg.Port))}, msg.NodeID, conn, IDLE)
+	err := cl.AppendClusterPeer(*ncp)
+	if err != nil {
+		return nil, err
+	}
+
+	newRPCMsg.StatusCode = SUCCESS
+
+	joinResponse := JoinResponse{
+		NodeID:      newRPCMsg.NodeID,
+		Status:      cl.CurrentNode.Status,
+		ClusterName: cl.ClusterName,
+	}
+	b, err := json.Marshal(joinResponse)
+	if err != nil {
+		return nil, err
+	}
+
+	buf, err := WrapPayloadToBuffer(newRPCMsg, b)
+	if err != nil {
+		return nil, err
+	}
+
+	return buf, nil
 }
 
 func HandleProbeRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn io.ReadWriteCloser, FILE_LOCATION string) error {

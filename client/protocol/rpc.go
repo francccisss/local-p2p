@@ -95,9 +95,15 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 				return ProtocolErrorWrap(err.Error(), CALL, FIND_CLUSTER)
 			}
 		case JOIN:
-			// clusterName := ClusterName(payload)
-			// cluster := (*clt)[clusterName]
-			// cluster.NewClusterPeer()
+			b, err := HandleJoinClusterRequest(newRPCMsg, msg, payload, conn, clt)
+			if err != nil {
+				return ProtocolErrorWrap(err.Error(), CALL, JOIN)
+			}
+			err = SendViaExistingConn(b, conn)
+			if err != nil {
+				return ProtocolErrorWrap(err.Error(), CALL, JOIN)
+			}
+			return nil
 
 		case PROBE:
 			return HandleProbeRequest(newRPCMsg, msg, payload, conn, n.FILE_LOCATION)
@@ -138,6 +144,11 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 			}
 			fmt.Printf("[REPLY]: FIND CLUSTER - %d new peers added to %s cluster\n", len(cl.ClusterPeers), cl.ClusterName)
 		case JOIN:
+			fmt.Println("HANDLING")
+			err := HandleJoinClusterResponse(msg, payload, conn, clt)
+			if err != nil {
+				return ProtocolErrorWrap(err.Error(), CALL, JOIN)
+			}
 
 		case LEECH:
 			return HandleLeechResponse(msg, payload, conn)
@@ -211,9 +222,9 @@ func (n *Node) PingNodes() error {
 		Port:       make([]byte, 4),
 	}
 	binary.LittleEndian.PutUint32(newMsg.Port, uint32(n.Addr.Port))
-	ping := []byte("Ping")
-	newMsg.PayloadSize = uint32(len(ping))
-	buf, err := WrapPayloadToBuffer(newMsg, ping)
+	pingRequest := []byte("Ping")
+	newMsg.PayloadSize = uint32(len(pingRequest))
+	buf, err := WrapPayloadToBuffer(newMsg, pingRequest)
 	for _, neighbor := range n.NeighboringNodes {
 		fmt.Printf("\nNEIGHBOR: %+v\n", neighbor)
 
@@ -249,10 +260,11 @@ func (n *Node) PingCluster(cname ClusterName, clt *ClusterTable) error {
 	if !ok {
 		return fmt.Errorf("Cluster not found")
 	}
+	pingRequest := []byte("Ping")
 	for _, p := range c.ClusterPeers {
 		fmt.Printf("\nPEER: %+v\n", p)
 
-		buf, err := WrapPayloadToBuffer(newMsg, []byte("Ping"))
+		buf, err := WrapPayloadToBuffer(newMsg, pingRequest)
 		if err != nil {
 			fmt.Printf("%s", err)
 			continue
@@ -295,7 +307,7 @@ func (n *Node) Probe(cname ClusterName, clt *ClusterTable) error {
 
 }
 
-func (n *Node) JoinCluster(clt Cluster) error {
+func (n *Node) JoinCluster(cname ClusterName, clt *ClusterTable) error {
 
 	newMsg := RPCMsg{
 		NodeID:  n.NodeID,
@@ -305,14 +317,26 @@ func (n *Node) JoinCluster(clt Cluster) error {
 		Method:  JOIN,
 		RPCType: CALL,
 	}
-	joinReq := clt.ClusterName
+
 	binary.LittleEndian.PutUint32(newMsg.Port, uint32(n.Addr.Port))
+
+	ct, ok := (*clt)[cname]
+
+	if !ok {
+		return fmt.Errorf("[INVOKE]: - JOIN CLUSTER 'Cluster %s does not exist'\n", cname)
+	}
+
+	joinReq := ct.ClusterName
+
 	b, err := WrapPayloadToBuffer(newMsg, []byte(joinReq))
+
 	if err != nil {
 		return err
 	}
 
-	for _, nc := range clt.ClusterPeers {
+	// TODO: Need to dial instead of using tcp write
+	// TODO: Change this afterwards
+	for _, nc := range ct.ClusterPeers {
 		_, err := nc.Conn.Write(b)
 		if err != nil {
 			continue

@@ -68,13 +68,19 @@ type ClusterResponse struct {
 }
 
 type PingRequest string
-type PingResponse NodeStatus
+type PingResponse = NodeStatus
 
-type JoinRequest ClusterName
+// TODO: do i need to handle any security checks here?
+type JoinRequest = ClusterName
 
 type JoinResponse struct {
-	Status PeerStatus
+	Status      PeerStatus
+	NodeID      NodeID
+	ClusterName ClusterName
 }
+
+// general error format - GEF
+// "[CALL]: PING - pinged by neighboring node %s\n", pr
 
 type RPCErrorStr struct {
 	ErrorMessage string

@@ -92,6 +92,18 @@ func HandleFindClusterResponse(msg RPCMsg, payload []byte, clt *ClusterTable) (*
 	}
 	return cr, nil
 }
+
+func HandleJoinClusterResponse(msg RPCMsg, payload []byte, conn io.ReadWriteCloser, clt *ClusterTable) error {
+	jsonRes := &JoinResponse{}
+	err := json.Unmarshal(payload, jsonRes)
+	if err != nil {
+		return nil
+	}
+	fmt.Printf("[REPLY]: - JOIN %s Accepted request to join %s cluster'\n", jsonRes.NodeID, jsonRes.ClusterName)
+
+	return nil
+}
+
 func HandleProbeResponse(msg RPCMsg, payload []byte) error {
 
 	var fileMetaData FileMetaData

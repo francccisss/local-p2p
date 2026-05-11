@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"testing"
-	"time"
 )
 
 type dummyCommChannel struct {
@@ -39,8 +38,6 @@ func TestClusterSearch(t *testing.T) {
 	addr := net.TCPAddr{IP: net.ParseIP("127.0.0.1")}
 	dchl := dummyCommChannel{buf: make(chan []byte, 1), n: 0}
 
-	go DummyNodeReaderWriterToChannel(&dchl, clusterName, addr)
-	time.Sleep(500)
 	// different go routine that sends request to receiver node
 	clientNode := protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: 3030}, "requester", "")
 	clientNode.NeighboringNodes = append(clientNode.NeighboringNodes, protocol.NodeAddr{IP: addr.IP, Port: 5656, Conn: &dchl})
@@ -48,6 +45,9 @@ func TestClusterSearch(t *testing.T) {
 
 	//  writes to dchl
 	clientNode.FindCluster(clusterName)
+
+	consumerNode := protocol.NewNode(protocol.NodeAddr{IP: net.ParseIP("127.0.0.1")}, "receiver", "")
+	ConsumerNodeReaderWriterToChannel(*consumerNode, &dchl, clusterName)
 
 	bodyBuf := make([]byte, 4096)
 
@@ -87,10 +87,14 @@ func TestJoinCluster(t *testing.T) {
 
 	// different go routine that sends request to receiver node
 	clientNode := protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: 3030}, "requester", "")
-	clientNode.NeighboringNodes = append(clientNode.NeighboringNodes, protocol.NodeAddr{IP: addr.IP, Port: 5656, Conn: &dchl})
+
+	// after FIND_CLUSTR
 	clientclt := protocol.CreateClusterTable()
+
 	newCluster := protocol.CreateCluster(clusterName)
+
 	(*clientclt)[clusterName] = newCluster
+
 	newCluster.ClusterPeers = append(newCluster.ClusterPeers, protocol.ClusterPeer{
 		Addr:   protocol.NodeAddr{IP: addr.IP, Port: 5656},
 		Conn:   &dchl,
@@ -98,16 +102,17 @@ func TestJoinCluster(t *testing.T) {
 		Status: protocol.IDLE,
 	})
 
+	err := clientNode.JoinCluster(clusterName, clientclt)
+
+	recvNode := protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: 5656}, "receiver", "")
+	ConsumerNodeReaderWriterToChannel(*recvNode, &dchl, clusterName)
+
 	// invokes RCP method
-	err := clientNode.JoinCluster(*newCluster)
 	if err != nil {
 		protocol.ProtocolErrorWrap(err.Error(), protocol.CALL, protocol.JOIN)
 		t.FailNow()
 	}
 
-	go DummyNodeReaderWriterToChannel(&dchl, clusterName, addr)
-
-	time.Sleep(500)
 	bodyBuf := make([]byte, 4096)
 
 	var mr connection.MessageReader = connection.MessageReader{
@@ -121,7 +126,7 @@ func TestJoinCluster(t *testing.T) {
 	// receives data from clientNode
 	msg, pl, err := mr.ExtractMessage(bodyBuf)
 	if err != nil {
-		protocol.ProtocolErrorWrap(err.Error(), protocol.CALL, protocol.JOIN)
+		fmt.Println(protocol.ProtocolErrorWrap(err.Error(), protocol.CALL, protocol.JOIN))
 		t.FailNow()
 	}
 
@@ -129,15 +134,23 @@ func TestJoinCluster(t *testing.T) {
 	err = clientNode.RecvRPCMessage(msg, pl, &dchl, clientclt)
 
 	if err != nil {
-		protocol.ProtocolErrorWrap(err.Error(), protocol.CALL, protocol.JOIN)
+		fmt.Println(protocol.ProtocolErrorWrap(err.Error(), protocol.CALL, protocol.JOIN))
 		t.FailNow()
 	}
+	cl := (*clientclt)[clusterName]
 
+	if len(cl.ClusterPeers) == 0 {
+		t.Fatalf("Cluster was not added")
+	}
+	for _, cp := range cl.ClusterPeers {
+		fmt.Printf("Cluster Peer: %+v\n", cp)
+	}
+	fmt.Printf("Cluster added to %s\n", clusterName)
 }
 
 // Writes reply to a dummy channel
-func DummyNodeReaderWriterToChannel(dchl *dummyCommChannel, clusterName protocol.ClusterName, nadd net.TCPAddr) {
-	receiverNode := protocol.NewNode(protocol.NodeAddr{IP: nadd.IP, Port: 5656}, "receiver", "")
+func ConsumerNodeReaderWriterToChannel(n protocol.Node, dchl *dummyCommChannel, clusterName protocol.ClusterName) {
+	receiverNode := protocol.NewNode(n.Addr, "receiver", "")
 	recvclt := protocol.CreateClusterTable()
 	(*recvclt)[clusterName] = protocol.CreateCluster(clusterName)
 	bodyBuf := make([]byte, 4096)
@@ -148,9 +161,9 @@ func DummyNodeReaderWriterToChannel(dchl *dummyCommChannel, clusterName protocol
 		State:         connection.PROCESSING,
 	}
 
-	dchl.Read(bodyBuf)
+	nyte, _ := dchl.Read(bodyBuf)
 	// receives data from clientNode
-	msg, pl, err := mr.ExtractMessage(bodyBuf)
+	msg, pl, err := mr.ExtractMessage(bodyBuf[:nyte])
 	if err != nil {
 		protocol.ProtocolErrorWrap(err.Error(), protocol.CALL, protocol.JOIN)
 		return
