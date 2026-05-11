@@ -71,11 +71,24 @@ func HandleFindClusterResponse(msg RPCMsg, payload []byte, clt *ClusterTable) (*
 	if err != nil {
 		return nil, err
 	}
-	// appends the node that returned
-	cr.Peers = append(cr.Peers, ClusterPeer{Addr: NodeAddr{IP: msg.IP, Port: int(binary.LittleEndian.Uint32(msg.Port))}, NodeID: msg.NodeID})
 	if msg.StatusCode == ERROR {
 		rpcError := RPCErrorStr{ErrorMessage: msg.Message}
 		return nil, rpcError
+	}
+
+	_, ok := (*clt)[cr.ClusterName]
+	// it could be empty BUT the node that the request was sent to has sent an empty
+	// list of peers which should mean that cluster does exist on the table
+	fmt.Println("Creating new cluster")
+	if !ok {
+		fmt.Println("Cluster for")
+		(*clt)[cr.ClusterName] = CreateCluster(cr.ClusterName)
+	}
+
+	// appends the node that returned
+	(*clt)[cr.ClusterName].AppendClusterPeer(ClusterPeer{Addr: NodeAddr{IP: msg.IP, Port: int(binary.LittleEndian.Uint32(msg.Port))}, NodeID: msg.NodeID})
+	for _, cpeer := range cr.Peers {
+		(*clt)[cr.ClusterName].AppendClusterPeer(cpeer)
 	}
 	return cr, nil
 }

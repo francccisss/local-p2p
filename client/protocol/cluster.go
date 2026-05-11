@@ -59,25 +59,26 @@ func CreateCluster(cname ClusterName) *Cluster {
 
 }
 
-// returns the added cluster peer, but can also be ignored
-func (cl *Cluster) NewClusterPeer(addr NodeAddr, nodeID NodeID) *ClusterPeer {
-	for _, cp := range cl.ClusterPeers {
-		if cp.NodeID != nodeID {
-			continue
-		}
-		fmt.Printf("%s Already exists\n", nodeID)
-		return nil
-	}
+func (cl *Cluster) NewClusterPeer(addr NodeAddr, nodeID NodeID, conn io.ReadWriteCloser, status PeerStatus) *ClusterPeer {
 
-	newClusterPeer := &ClusterPeer{
+	return &ClusterPeer{
 		Addr:   addr,
 		NodeID: nodeID,
 		Conn:   nil,
-		Status: IDLE,
+		Status: status,
+	}
+}
+
+func (cl *Cluster) AppendClusterPeer(cpeer ClusterPeer) error {
+	for _, cp := range cl.ClusterPeers {
+		if cp.NodeID != cpeer.NodeID {
+			continue
+		}
+		return fmt.Errorf("%s - Already exists\n", cpeer.NodeID)
 	}
 
-	cl.ClusterPeers = append(cl.ClusterPeers, *newClusterPeer)
-	return newClusterPeer
+	cl.ClusterPeers = append(cl.ClusterPeers, cpeer)
+	return nil
 }
 
 func (cl *Cluster) NewClusterPeerThread(nodeID NodeID) *ClusterPeerThread {

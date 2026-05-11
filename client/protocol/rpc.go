@@ -25,6 +25,9 @@ func ReadRPCMessage(buffer []byte) (RPCMsg, error) {
 }
 
 func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteCloser, clt *ClusterTable) error {
+	if msg.StatusCode == ERROR {
+		return ProtocolErrorWrap(msg.Message, msg.RPCType, msg.Method)
+	}
 
 	switch msg.RPCType {
 
@@ -76,8 +79,14 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 				newRPCMsg.StatusCode = ERROR
 				newRPCMsg.Message = err.Error()
 				b, err := WrapPayloadToBuffer(newRPCMsg, nil)
+				if err != nil {
+					return ProtocolErrorWrap(err.Error(), CALL, FIND_CLUSTER)
+				}
 				err = SendViaExistingConn(b, conn)
-				return ProtocolErrorWrap(err.Error(), CALL, FIND_CLUSTER)
+				if err != nil {
+					return ProtocolErrorWrap(err.Error(), CALL, FIND_CLUSTER)
+				}
+				return nil
 			}
 
 			err = SendViaExistingConn(b, conn)
@@ -86,6 +95,9 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 				return ProtocolErrorWrap(err.Error(), CALL, FIND_CLUSTER)
 			}
 		case JOIN:
+			// clusterName := ClusterName(payload)
+			// cluster := (*clt)[clusterName]
+			// cluster.NewClusterPeer()
 
 		case PROBE:
 			return HandleProbeRequest(newRPCMsg, msg, payload, conn, n.FILE_LOCATION)
@@ -121,7 +133,8 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 				cl = (*clt)[cr.ClusterName]
 			}
 			for _, p := range cr.Peers {
-				cl.NewClusterPeer(p.Addr, p.NodeID)
+				// populate the conn ONLY WHEN JOIN is called and accepted for each peer in cluster
+				cl.NewClusterPeer(p.Addr, p.NodeID, nil, p.Status)
 			}
 			fmt.Printf("[REPLY]: FIND CLUSTER - %d new peers added to %s cluster\n", len(cl.ClusterPeers), cl.ClusterName)
 		case JOIN:
