@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 )
 
 func HandleFindClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, clt *ClusterTable) ([]byte, error) {
@@ -90,7 +91,7 @@ func HandleLeechRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn io.Re
 		}
 		return err
 	}
-	buf, _, err := CreateDataSegment(path+en.Name(), &fr)
+	buf, _, err := CreateDataPiece(path+en.Name(), &fr)
 	if err != nil {
 		return err
 	}
@@ -175,4 +176,33 @@ func HandleProbeRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn io.Re
 		return err
 	}
 	return nil
+}
+
+// TODO: add checksum parameter passed in by caller
+// each file corresponds to a cluster name
+
+func ProbeFile(FILE_LOCATION string, cname ClusterName) (StatusCode, FileMetaData, error) {
+
+	entry, path, err := Checkfile(string(cname), FILE_LOCATION)
+	if err != nil {
+		return ERROR, FileMetaData{}, err
+	}
+
+	file, err := entry.Info()
+	if err != nil {
+		return ERROR, FileMetaData{}, err
+	}
+	// obviously need to use the absolute route to the file
+	// reuse wd prefix? hmmm
+	fmt.Printf("Absolute Path: %s\n", path)
+	fileBuffer, err := os.ReadFile(path + file.Name())
+
+	if err != nil {
+		return ERROR, FileMetaData{}, err
+	}
+
+	fmt.Printf("file length: %d\n", len(fileBuffer))
+
+	// check data integrity of file using checksum
+	return SUCCESS, FileMetaData{Name: file.Name(), Hash: string(cname), Size: uint64(file.Size())}, nil
 }

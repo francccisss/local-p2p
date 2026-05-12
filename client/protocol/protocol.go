@@ -70,6 +70,9 @@ type ClusterResponse struct {
 type PingRequest string
 type PingResponse = NodeStatus
 
+type ProbeRequest string
+type ProbeReponse = NodeStatus
+
 // TODO: do i need to handle any security checks here?
 type JoinRequest = ClusterName
 

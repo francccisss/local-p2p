@@ -19,7 +19,7 @@ type FileMetaData struct {
 
 // used for RPC Message by requester
 type FileRequest struct {
-	Segments  int64
+	Pieces    int64
 	Hash      string // should be 16bit string
 	Size      int64
 	Offset    int64
@@ -27,20 +27,20 @@ type FileRequest struct {
 }
 
 // used for RPC Message by receiver to reply to the iniator
-type SegmentHeader struct {
-	SegmentSize     int64       // from blockSize or remaining bytes
-	SegmentPosition int64       // current bytes created / block
-	TotalSegments   int64       // size in bytes / block
-	ClusterName     ClusterName // string ID of the file to be sent
+type PieceHeader struct {
+	PieceSize     int64       // from blockSize or remaining bytes
+	PiecePosition int64       // current bytes created / block
+	TotalPieces   int64       // size in bytes / block
+	ClusterName   ClusterName // string ID of the file to be sent
 }
 
-// HashLen, Hash(variable sized), Segment Pos, SegmentOffset, total Segments
-func ParseSegmentHeader(header []byte) (SegmentHeader, int, error) {
+// HashLen, Hash(variable sized), Piece Pos, PieceOffset, total Pieces
+func ParsePieceHeader(header []byte) (PieceHeader, int, error) {
 
 	type Header struct {
-		SegmentSize     int64 // from blockSize or remaining bytes
-		SegmentPosition int64 // current bytes created / block
-		TotalSegments   int64 // size in bytes / block
+		PieceSize     int64 // from blockSize or remaining bytes
+		PiecePosition int64 // current bytes created / block
+		TotalPieces   int64 // size in bytes / block
 	}
 
 	fmt.Printf("Length of header: %d\n", len(header))
@@ -56,63 +56,63 @@ func ParseSegmentHeader(header []byte) (SegmentHeader, int, error) {
 	err := binary.Read(hreader, binary.LittleEndian, &h)
 
 	if err != nil {
-		return SegmentHeader{}, 0, err
+		return PieceHeader{}, 0, err
 	}
 
-	return SegmentHeader{
-		SegmentSize:     h.SegmentSize,
-		SegmentPosition: h.SegmentPosition,
-		TotalSegments:   h.TotalSegments,
-		ClusterName:     ClusterName(header[4 : 4+hashLen]),
+	return PieceHeader{
+		PieceSize:     h.PieceSize,
+		PiecePosition: h.PiecePosition,
+		TotalPieces:   h.TotalPieces,
+		ClusterName:   ClusterName(header[4 : 4+hashLen]),
 	}, len(header), nil
 }
 
-// Wrapper for ReadFileBuf to return Buffer instead of SegmentHeader
-// Header Spec returns SegmentHeader bytes:
-// 4 bytes size of Hash + 8 bytes TotalSegments + 8 bytes SegmentPosition + 8 total Segments= 20 byte header
+// Wrapper for ReadFileBuf to return Buffer instead of PieceHeader
+// Header Spec returns PieceHeader bytes:
+// 4 bytes size of Hash + 8 bytes TotalPieces + 8 bytes PiecePosition + 8 total Pieces= 20 byte header
 // Variable Length data
 // Hash and DataChunk
 // DataChunk buffer could be variable sized chunk
-func CreateDataSegment(path string, dataInfo *FileRequest) (*bytes.Buffer, int, error) {
+func CreateDataPiece(path string, dataInfo *FileRequest) (*bytes.Buffer, int, error) {
 
-	fmt.Printf("Creating segments for %s\n", dataInfo.Hash)
+	fmt.Printf("Creating Pieces for %s\n", dataInfo.Hash)
 	buf, err := ReadFileBuf(path, dataInfo)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	segmentBuffer := new(bytes.Buffer)
+	PieceBuffer := new(bytes.Buffer)
 
 	hashLen := len(dataInfo.Hash)
-	segmentBuffer.Grow(hashLen + 28 + len(buf))
+	PieceBuffer.Grow(hashLen + 28 + len(buf))
 
 	hashLenBuf := make([]byte, 4)
 	binary.LittleEndian.PutUint32(hashLenBuf, uint32(hashLen))
 
-	binary.Write(segmentBuffer, binary.LittleEndian, uint32(hashLen))
-	segmentBuffer.Write([]byte(dataInfo.Hash))
-	fmt.Printf("BUF INT VAL: %d, HASH LEN in Bytes: B>%d, String %s\n", hashLen, hashLenBuf, segmentBuffer.Bytes()[:hashLen])
+	binary.Write(PieceBuffer, binary.LittleEndian, uint32(hashLen))
+	PieceBuffer.Write([]byte(dataInfo.Hash))
+	fmt.Printf("BUF INT VAL: %d, HASH LEN in Bytes: B>%d, String %s\n", hashLen, hashLenBuf, PieceBuffer.Bytes()[:hashLen])
 
-	// 8 bytes Segment Size
-	binary.Write(segmentBuffer, binary.LittleEndian, uint64(len(buf)))
-	fmt.Printf("BUF INT VAL: %d, Data Info Segment Size: %d\n", len(buf), binary.LittleEndian.Uint64(segmentBuffer.Bytes()[hashLen+4:]))
+	// 8 bytes Piece Size
+	binary.Write(PieceBuffer, binary.LittleEndian, uint64(len(buf)))
+	fmt.Printf("BUF INT VAL: %d, Data Info Piece Size: %d\n", len(buf), binary.LittleEndian.Uint64(PieceBuffer.Bytes()[hashLen+4:]))
 
 	// 8 bytes Offset
-	binary.Write(segmentBuffer, binary.LittleEndian, uint64(dataInfo.Offset/dataInfo.BlockSize)) // get current segment
-	fmt.Printf("BUF INT VAL: %d, Data Info Offset: %d\n", dataInfo.Offset, binary.LittleEndian.Uint64(segmentBuffer.Bytes()[hashLen+12:]))
+	binary.Write(PieceBuffer, binary.LittleEndian, uint64(dataInfo.Offset/dataInfo.BlockSize)) // get current Piece
+	fmt.Printf("BUF INT VAL: %d, Data Info Offset: %d\n", dataInfo.Offset, binary.LittleEndian.Uint64(PieceBuffer.Bytes()[hashLen+12:]))
 
-	// 8 bytes TotalSegments
-	binary.Write(segmentBuffer, binary.LittleEndian, uint64(math.Ceil(float64(dataInfo.Size)/float64(dataInfo.BlockSize))))
-	fmt.Printf("BUF INT VAL: %d, Data Info Total Segments: %d\n", dataInfo.Size, binary.LittleEndian.Uint64(segmentBuffer.Bytes()[hashLen+12+8:]))
+	// 8 bytes TotalPieces
+	binary.Write(PieceBuffer, binary.LittleEndian, uint64(math.Ceil(float64(dataInfo.Size)/float64(dataInfo.BlockSize))))
+	fmt.Printf("BUF INT VAL: %d, Data Info Total Pieces: %d\n", dataInfo.Size, binary.LittleEndian.Uint64(PieceBuffer.Bytes()[hashLen+12+8:]))
 
-	headerSize := segmentBuffer.Len()
-	segmentBuffer.Write(buf)
+	headerSize := PieceBuffer.Len()
+	PieceBuffer.Write(buf)
 
-	return segmentBuffer, headerSize, nil
+	return PieceBuffer, headerSize, nil
 
 }
 
-// multiple peers would need to coordinate how many segments
+// multiple peers would need to coordinate how many Pieces
 func ReadFileBuf(path string, dataInfo *FileRequest) ([]byte, error) {
 
 	fd, err := syscall.Open(path, syscall.O_RDONLY, 0644)

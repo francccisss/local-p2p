@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"sync"
 	"time"
 )
@@ -188,6 +187,7 @@ func (n *Node) FindCluster(cname ClusterName) error {
 	fmt.Printf("DOUBLE CHECK BUFFER")
 	for _, n := range n.NeighboringNodes {
 		wg.Go(func() {
+			// TODO: need to dial NeighboringNodes instead of communicating in an open channel
 			// BRUUUHHH
 			// conn, err := net.Dial("tcp", string(n.IP)+":"+strconv.Itoa(n.Port))
 			// if err != nil {
@@ -400,35 +400,6 @@ func (n *Node) Leech(cname ClusterName, spawnThreads bool, fr FileRequest, clt *
 	fmt.Printf("[LEECH REQUEST]: Request sent to peers in cluster: %s\n", cname)
 
 	return nil
-}
-
-// TODO: add checksum parameter passed in by caller
-// each file corresponds to a cluster name
-
-func ProbeFile(FILE_LOCATION string, cname ClusterName) (StatusCode, FileMetaData, error) {
-
-	entry, path, err := Checkfile(string(cname), FILE_LOCATION)
-	if err != nil {
-		return ERROR, FileMetaData{}, err
-	}
-
-	file, err := entry.Info()
-	if err != nil {
-		return ERROR, FileMetaData{}, err
-	}
-	// obviously need to use the absolute route to the file
-	// reuse wd prefix? hmmm
-	fmt.Printf("Absolute Path: %s\n", path)
-	fileBuffer, err := os.ReadFile(path + file.Name())
-
-	if err != nil {
-		return ERROR, FileMetaData{}, err
-	}
-
-	fmt.Printf("file length: %d\n", len(fileBuffer))
-
-	// check data integrity of file using checksum
-	return SUCCESS, FileMetaData{Name: file.Name(), Hash: string(cname), Size: uint64(file.Size())}, nil
 }
 
 // Wraps the RPCMsg and the payload into a buffer and returns it

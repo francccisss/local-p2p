@@ -9,12 +9,13 @@ import (
 	"testing"
 )
 
-func TestDataSegmentation(t *testing.T) {
+func TestDataPieces(t *testing.T) {
 
 	n := protocol.Node{
 		FILE_LOCATION: "/files/",
 	}
 
+	// pre processing file
 	testFile := "IosevkaTerm.zip"
 	en, path, err := protocol.Checkfile(testFile, n.FILE_LOCATION)
 	if err != nil {
@@ -43,26 +44,27 @@ func TestDataSegmentation(t *testing.T) {
 	}
 
 	// this is all set from reading the meta file from DHT Server
-	dfinfo.Segments = int64(math.Ceil(float64(dfinfo.Size) / float64(dfinfo.BlockSize)))
+	dfinfo.Pieces = int64(math.Ceil(float64(dfinfo.Size) / float64(dfinfo.BlockSize)))
 
 	fmt.Printf("Chunk size - %d: Bytes, %d: Mega Bytes\n", int(dfinfo.BlockSize), int(dfinfo.BlockSize/1024))
 
-	fmt.Printf("Total segments to create: %d\n", dfinfo.Segments)
+	fmt.Printf("Total Pieces to create: %d\n", dfinfo.Pieces)
 
 	var db bytes.Buffer
 
-	for range dfinfo.Segments {
-		fmt.Printf("Segment Pos: %d\n", dfinfo.Offset)
-		fmt.Printf("Segment Size: %d\n", dfinfo.BlockSize)
+	// loop represents the call to the peer for each pieces
+	for range dfinfo.Pieces {
+		fmt.Printf("Piece Pos: %d\n", dfinfo.Offset)
+		fmt.Printf("Piece Size: %d\n", dfinfo.BlockSize)
 
-		ds, headerLen, err := protocol.CreateDataSegment(path+en.Name(), &dfinfo)
+		ds, headerLen, err := protocol.CreateDataPiece(path+en.Name(), &dfinfo)
 
 		if err != nil {
 			fmt.Println(err)
 			t.FailNow()
 		}
 		dsBuf := ds.Bytes()
-		sh, n, err := protocol.ParseSegmentHeader(dsBuf[:headerLen])
+		sh, n, err := protocol.ParsePieceHeader(dsBuf[:headerLen])
 		if err != nil {
 			fmt.Println(err)
 			t.FailNow()
@@ -70,9 +72,9 @@ func TestDataSegmentation(t *testing.T) {
 
 		fmt.Println("--------------------------------------------------")
 		fmt.Printf("Cluster Name: %s\n", sh.ClusterName)
-		fmt.Printf("Segment Position: %d\n", sh.SegmentPosition)
-		fmt.Printf("Segment Size: %d\n", sh.SegmentSize)
-		fmt.Printf("Total Segments: %d\n", sh.TotalSegments)
+		fmt.Printf("Piece Position: %d\n", sh.PiecePosition)
+		fmt.Printf("Piece Size: %d\n", sh.PieceSize)
+		fmt.Printf("Total Pieces: %d\n", sh.TotalPieces)
 		fmt.Printf("Payload Size: %d\n", len(dsBuf[n:]))
 		db.Write(dsBuf[n:])
 		fmt.Println("--------------------------------------------------")
