@@ -167,6 +167,7 @@ func Checkfile(fileHash FileHash, FILE_LOCATION string) (os.DirEntry, string, er
 // and if the current entry is a Directory the `wd` is appended with the current name
 // of the directory, and if not then continue.
 // If the current file is not a directory and matches the `fileKey` the return the entry of that file
+
 func recursiveFileSearch(fileHash FileHash, entries []os.DirEntry, wd *[]string) (os.DirEntry, error) {
 	for _, entry := range entries {
 		info, err := entry.Info()

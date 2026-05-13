@@ -153,17 +153,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 			if err != nil {
 				return ProtocolErrorWrap(err.Error(), REPLY, FIND_CLUSTER)
 			}
-			cl, ok := (*clt)[cr.ClusterName]
-			if !ok {
-				fmt.Printf("Cluster does not exist creating local cluster for %s\n", cr.ClusterName)
-				(*clt)[cr.ClusterName] = CreateCluster(cr.ClusterName)
-				cl = (*clt)[cr.ClusterName]
-			}
-			for _, p := range cr.Peers {
-				// populate the conn ONLY WHEN JOIN is called and accepted for each peer in cluster
-				cl.NewClusterPeer(p.Addr, p.NodeID, nil, p.Status)
-			}
-			fmt.Printf("[REPLY]: FIND CLUSTER - %d new peers added to %s cluster\n", len(cl.ClusterPeers), cl.ClusterName)
+			fmt.Printf("[REPLY]: FIND CLUSTER - %d new peers added to %s cluster\n", len(cr.Peers), cr.ClusterName)
 		case JOIN:
 			fmt.Println("HANDLING")
 			err := HandleJoinClusterResponse(msg, payload, conn, clt)
@@ -328,13 +318,14 @@ func (n *Node) ProbeFile(cname ClusterName, clt *ClusterTable) error {
 
 	nSent := 0
 	for _, cp := range c.ClusterPeers {
-
 		buf, err := WrapPayloadToBuffer(newMsg, b)
 		if err != nil {
+			fmt.Printf("[CALLING]: PROBE[ERROR] - %s", err)
 			continue
 		}
 		err = SendViaExistingConn(buf, cp.Conn)
 		if err != nil {
+			fmt.Printf("[CALLING]: PROBE[ERROR] - %s", err)
 			continue
 		}
 		nSent++

@@ -82,11 +82,11 @@ func HandleFindClusterResponse(msg RPCMsg, payload []byte, clt *ClusterTable) (*
 	fmt.Println("Creating new cluster")
 	if !ok {
 		fmt.Println("Cluster for")
-		(*clt)[cr.ClusterName] = CreateCluster(cr.ClusterName)
+		(*clt)[cr.ClusterName] = CreateCluster(cr.ClusterName, cr.FileHash)
 	}
 
 	// appends the node that returned
-	(*clt)[cr.ClusterName].AppendClusterPeer(ClusterPeer{Addr: NodeAddr{IP: msg.IP, Port: int(binary.LittleEndian.Uint32(msg.Port))}, NodeID: msg.NodeID})
+	(*clt)[cr.ClusterName].AppendClusterPeer(ClusterPeer{Addr: NodeAddr{IP: msg.IP, Port: int(binary.LittleEndian.Uint32(msg.Port))}, NodeID: msg.NodeID, Conn: nil})
 	for _, cpeer := range cr.Peers {
 		(*clt)[cr.ClusterName].AppendClusterPeer(cpeer)
 	}

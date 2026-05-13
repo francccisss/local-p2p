@@ -47,13 +47,14 @@ func CreateClusterTable() *ClusterTable {
 
 }
 
-func CreateCluster(cname ClusterName) *Cluster {
+func CreateCluster(cname ClusterName, fileHash FileHash) *Cluster {
 	cpt := make(map[NodeID]*ClusterPeerThread)
 	newCluster := Cluster{
 		ClusterPeerThreads: cpt,
 		ClusterPeers:       []ClusterPeer{},
 		CurrentNode:        Peer{Status: IDLE, ClusterName: cname},
 		ClusterName:        cname,
+		FileHash:           fileHash,
 	}
 
 	return &newCluster
@@ -65,7 +66,7 @@ func (cl *Cluster) NewClusterPeer(addr NodeAddr, nodeID NodeID, conn io.ReadWrit
 	return &ClusterPeer{
 		Addr:   addr,
 		NodeID: nodeID,
-		Conn:   nil,
+		Conn:   conn,
 		Status: status,
 	}
 }

@@ -66,7 +66,8 @@ type ClusterRequest string
 
 type ClusterResponse struct {
 	ClusterName
-	Peers []ClusterPeer
+	FileHash FileHash
+	Peers    []ClusterPeer
 }
 
 type PingRequest string

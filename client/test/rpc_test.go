@@ -33,6 +33,8 @@ func (clb *dummyCommChannel) Close() error {
 
 var consumerNode = protocol.NewNode(protocol.NodeAddr{IP: net.ParseIP("127.0.0.1"), Port: 5656}, "receiver", "/files/")
 
+const fileHash_test = "what.txt"
+
 func TestClusterSearch(t *testing.T) {
 	fmt.Println("[Begin Test]: Test Cluster Search")
 	var clusterName protocol.ClusterName = "vim-boys"
@@ -91,7 +93,7 @@ func TestJoinCluster(t *testing.T) {
 	// after FIND_CLUSTR
 	clientclt := protocol.CreateClusterTable()
 
-	newCluster := protocol.CreateCluster(clusterName)
+	newCluster := protocol.CreateCluster(clusterName, fileHash_test)
 
 	(*clientclt)[clusterName] = newCluster
 
@@ -156,10 +158,13 @@ func TestProbeFile(t *testing.T) {
 	// different go routine that sends request to receiver node
 	clientNode := protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: 3030}, "requester", "")
 	clientclt := protocol.CreateClusterTable()
-	newCluster := protocol.CreateCluster(clusterName)
+	newCluster := protocol.CreateCluster(clusterName, fileHash_test)
+
 	(*clientclt)[clusterName] = newCluster
 
-	newCluster.NewClusterPeer(consumerNode.Addr, consumerNode.NodeID, &dchl, protocol.IDLE)
+	receiverPeer := newCluster.NewClusterPeer(consumerNode.Addr, consumerNode.NodeID, &dchl, protocol.IDLE)
+	newCluster.AppendClusterPeer(*receiverPeer)
+	fmt.Printf("%+v\n", (*clientclt)[clusterName])
 
 	if err := clientNode.ProbeFile(clusterName, clientclt); err != nil {
 		fmt.Println(err)
@@ -177,6 +182,7 @@ func TestProbeFile(t *testing.T) {
 	}
 
 	// Reads reply from receiver
+	fmt.Println("Waiting for message from Consumer")
 	dchl.Read(bodyBuf)
 	// receives data from clientNode
 	msg, pl, err := mr.ExtractMessage(bodyBuf)
@@ -192,22 +198,13 @@ func TestProbeFile(t *testing.T) {
 		fmt.Println(err)
 		t.FailNow()
 	}
-	cl := (*clientclt)[clusterName]
-
-	if len(cl.ClusterPeers) == 0 {
-		t.Fatalf("Cluster was not added")
-	}
-	for _, cp := range cl.ClusterPeers {
-		fmt.Printf("Cluster Peer: %+v\n", cp)
-	}
-	fmt.Printf("Cluster added to %s\n", clusterName)
 
 }
 
 // Writes reply to a dummy channel
 func ConsumerNodeReaderWriterToChannel(n protocol.Node, dchl *dummyCommChannel, clusterName protocol.ClusterName) {
 	recvclt := protocol.CreateClusterTable()
-	(*recvclt)[clusterName] = protocol.CreateCluster(clusterName)
+	(*recvclt)[clusterName] = protocol.CreateCluster(clusterName, fileHash_test)
 	bodyBuf := make([]byte, 4096)
 
 	var mr connection.MessageReader = connection.MessageReader{

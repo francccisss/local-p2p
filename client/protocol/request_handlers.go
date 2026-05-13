@@ -29,6 +29,7 @@ func HandleFindClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, clt 
 	newResponse := ClusterResponse{
 		ClusterName: cl.ClusterName,
 		Peers:       cl.ClusterPeers,
+		FileHash:    cl.FileHash,
 	}
 	b, err := json.Marshal(newResponse)
 	if err != nil {
