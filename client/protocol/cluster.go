@@ -29,6 +29,7 @@ type ClusterPeer struct {
 type Cluster struct {
 	ClusterPeerThreads map[NodeID]*ClusterPeerThread // keep track of peers
 	ClusterName        ClusterName
+	FileHash           string
 	ClusterPeers       []ClusterPeer
 	CurrentNode        Peer // created when a cluster is created
 }

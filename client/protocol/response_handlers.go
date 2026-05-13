@@ -106,7 +106,7 @@ func HandleJoinClusterResponse(msg RPCMsg, payload []byte, conn io.ReadWriteClos
 
 func HandleProbeResponse(msg RPCMsg, payload []byte) error {
 
-	var fileMetaData FileMetaData
+	var fileMetaData ProbeReponse
 	err := json.Unmarshal(payload, &fileMetaData)
 	if err != nil {
 		fmt.Println("Unable to Unmarshal FileMetaData")

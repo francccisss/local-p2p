@@ -1,5 +1,7 @@
 package protocol
 
+type FileHash = string
+
 type Method uint32
 type MethodString string
 
@@ -70,8 +72,11 @@ type ClusterResponse struct {
 type PingRequest string
 type PingResponse = NodeStatus
 
-type ProbeRequest string
-type ProbeReponse = NodeStatus
+type ProbeRequest struct {
+	ClusterName ClusterName
+	FileHash    FileHash
+}
+type ProbeReponse = FileMetaData
 
 // TODO: do i need to handle any security checks here?
 type JoinRequest = ClusterName

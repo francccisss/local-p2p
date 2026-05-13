@@ -141,56 +141,39 @@ func HandleJoinClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn
 	return buf, nil
 }
 
-func HandleProbeRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn io.ReadWriteCloser, FILE_LOCATION string) error {
+func HandleProbeRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, FILE_LOCATION string) ([]byte, error) {
 
-	cname := string(payload)
-	status, meta, err := ProbeFile(FILE_LOCATION, ClusterName(cname))
-
+	var preq ProbeRequest
+	err := json.Unmarshal(payload, &preq)
 	if err != nil {
-		fmt.Printf("[PROBE REQUEST]: %s\n", err)
-		newRPCMsg.Message = err.Error()
-		newRPCMsg.StatusCode = status
-		b, err := WrapPayloadToBuffer(newRPCMsg, nil)
-		if err != nil {
-			return fmt.Errorf("Unable to send message")
-		}
-		err = SendViaExistingConn(b, conn)
-		if err != nil {
-			return fmt.Errorf("Unable to send message")
-		}
+		return nil, err
 	}
+
+	meta, err := ProbeFile(FILE_LOCATION, preq.FileHash)
+
 	b, err := json.Marshal(meta)
 
 	if err != nil {
 		fmt.Println("Unable to Marshal FileMetaData")
-		return err
+		return nil, err
 	}
 
-	newRPCMsg.StatusCode = SUCCESS
-	buf, err := WrapPayloadToBuffer(newRPCMsg, b)
-	if err != nil {
-		return err
-	}
-	err = SendViaExistingConn(buf, conn)
-	if err != nil {
-		return err
-	}
-	return nil
+	return b, nil
 }
 
 // TODO: add checksum parameter passed in by caller
 // each file corresponds to a cluster name
 
-func ProbeFile(FILE_LOCATION string, cname ClusterName) (StatusCode, FileMetaData, error) {
+func ProbeFile(FILE_LOCATION string, fileHash FileHash) (FileMetaData, error) {
 
-	entry, path, err := Checkfile(string(cname), FILE_LOCATION)
+	entry, path, err := Checkfile(fileHash, FILE_LOCATION)
 	if err != nil {
-		return ERROR, FileMetaData{}, err
+		return FileMetaData{}, err
 	}
 
 	file, err := entry.Info()
 	if err != nil {
-		return ERROR, FileMetaData{}, err
+		return FileMetaData{}, err
 	}
 	// obviously need to use the absolute route to the file
 	// reuse wd prefix? hmmm
@@ -198,11 +181,11 @@ func ProbeFile(FILE_LOCATION string, cname ClusterName) (StatusCode, FileMetaDat
 	fileBuffer, err := os.ReadFile(path + file.Name())
 
 	if err != nil {
-		return ERROR, FileMetaData{}, err
+		return FileMetaData{}, err
 	}
 
 	fmt.Printf("file length: %d\n", len(fileBuffer))
 
 	// check data integrity of file using checksum
-	return SUCCESS, FileMetaData{Name: file.Name(), Hash: string(cname), Size: uint64(file.Size())}, nil
+	return FileMetaData{Name: file.Name(), Hash: fileHash, Size: uint64(file.Size())}, nil
 }

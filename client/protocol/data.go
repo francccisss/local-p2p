@@ -140,7 +140,7 @@ func ReadFileBuf(path string, dataInfo *FileRequest) ([]byte, error) {
 	return tmp, nil
 }
 
-func Checkfile(hashKey string, FILE_LOCATION string) (os.DirEntry, string, error) {
+func Checkfile(fileHash FileHash, FILE_LOCATION string) (os.DirEntry, string, error) {
 
 	programwd, err := os.Getwd()
 	if err != nil {
@@ -153,7 +153,7 @@ func Checkfile(hashKey string, FILE_LOCATION string) (os.DirEntry, string, error
 
 	entries, err := os.ReadDir(utils.ConcatStr(&wd))
 
-	entry, err := recursiveFileSearch(hashKey, entries, &wd)
+	entry, err := recursiveFileSearch(fileHash, entries, &wd)
 
 	if err != nil {
 		return nil, "", fmt.Errorf("No entries matching the fileKey.")
@@ -167,7 +167,7 @@ func Checkfile(hashKey string, FILE_LOCATION string) (os.DirEntry, string, error
 // and if the current entry is a Directory the `wd` is appended with the current name
 // of the directory, and if not then continue.
 // If the current file is not a directory and matches the `fileKey` the return the entry of that file
-func recursiveFileSearch(fileKey string, entries []os.DirEntry, wd *[]string) (os.DirEntry, error) {
+func recursiveFileSearch(fileHash FileHash, entries []os.DirEntry, wd *[]string) (os.DirEntry, error) {
 	for _, entry := range entries {
 		info, err := entry.Info()
 		entryName := info.Name()
@@ -178,7 +178,7 @@ func recursiveFileSearch(fileKey string, entries []os.DirEntry, wd *[]string) (o
 			continue
 		}
 		if !info.IsDir() {
-			if entryName == fileKey {
+			if entryName == fileHash {
 				return entry, nil
 			}
 			continue
@@ -192,7 +192,7 @@ func recursiveFileSearch(fileKey string, entries []os.DirEntry, wd *[]string) (o
 			fmt.Printf("Reason: %s\n", err)
 			continue
 		}
-		foundEntry, err := recursiveFileSearch(fileKey, curDirEntries, wd)
+		foundEntry, err := recursiveFileSearch(fileHash, curDirEntries, wd)
 		if err != nil {
 			*wd = (*wd)[:len(*wd)-1]
 			continue

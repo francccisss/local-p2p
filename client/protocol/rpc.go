@@ -105,7 +105,29 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 			return nil
 
 		case PROBE:
-			return HandleProbeRequest(newRPCMsg, msg, payload, conn, n.FILE_LOCATION)
+			b, err := HandleProbeRequest(newRPCMsg, msg, payload, n.FILE_LOCATION)
+			if err != nil {
+				fmt.Printf("[PROBE REQUEST]: %s\n", err)
+				newRPCMsg.Message = err.Error()
+				newRPCMsg.StatusCode = ERROR
+				b, err := WrapPayloadToBuffer(newRPCMsg, nil)
+				if err != nil {
+					return fmt.Errorf("Unable to send message")
+				}
+				err = SendViaExistingConn(b, conn)
+				if err != nil {
+					return fmt.Errorf("Unable to send message")
+				}
+			}
+
+			buf, err := WrapPayloadToBuffer(newRPCMsg, b)
+			if err != nil {
+				return ProtocolErrorWrap(err.Error(), CALL, PROBE)
+			}
+			err = SendViaExistingConn(buf, conn)
+			if err != nil {
+				return ProtocolErrorWrap(err.Error(), CALL, PROBE)
+			}
 
 		case LEECH:
 			return HandleLeechRequest(newRPCMsg, msg, payload, conn, n.FILE_LOCATION)
@@ -278,30 +300,46 @@ func (n *Node) PingCluster(cname ClusterName, clt *ClusterTable) error {
 	return nil
 }
 
-func (n *Node) Probe(cname ClusterName, clt *ClusterTable) error {
+func (n *Node) ProbeFile(cname ClusterName, clt *ClusterTable) error {
 	c, ok := (*clt)[cname]
 	if !ok {
-		return fmt.Errorf("Cluster does not exist")
+		return fmt.Errorf("[CALLING]: PROBE[ERROR] - 'Cluster does not exist'")
 	}
 	newMsg := RPCMsg{
 		RPCType: CALL,
 		Method:  PROBE,
 		NodeID:  n.NodeID,
 		IP:      n.Addr.IP,
+		Message: "Probe",
+		Port:    make([]byte, 4),
 	}
+
+	// TODO: update cname to actual file hash
+	newProbeReq := ProbeRequest{
+		ClusterName: cname,
+		FileHash:    c.FileHash,
+	}
+	b, err := json.Marshal(newProbeReq)
+	if err != nil {
+		return fmt.Errorf("[CALLING]: PROBE[ERROR] - %s", err)
+	}
+
 	binary.LittleEndian.PutUint32(newMsg.Port, uint32(n.Addr.Port))
 
+	nSent := 0
 	for _, cp := range c.ClusterPeers {
 
-		buf, err := WrapPayloadToBuffer(newMsg, []byte(cname))
+		buf, err := WrapPayloadToBuffer(newMsg, b)
 		if err != nil {
 			continue
 		}
-		err = SendMsg(buf, cp.Addr)
+		err = SendViaExistingConn(buf, cp.Conn)
 		if err != nil {
 			continue
 		}
+		nSent++
 	}
+	fmt.Printf("[CALLING]: PROBE - 'Sent Probe request to %d Peers in Cluster %s'\n", nSent, cname)
 
 	return nil
 
@@ -323,7 +361,7 @@ func (n *Node) JoinCluster(cname ClusterName, clt *ClusterTable) error {
 	ct, ok := (*clt)[cname]
 
 	if !ok {
-		return fmt.Errorf("[INVOKE]: - JOIN CLUSTER 'Cluster %s does not exist'\n", cname)
+		return fmt.Errorf("[CALLING]: JOIN_CLUSTER[ERROR] - 'Cluster %s does not exist'\n", cname)
 	}
 
 	joinReq := ct.ClusterName
@@ -331,7 +369,7 @@ func (n *Node) JoinCluster(cname ClusterName, clt *ClusterTable) error {
 	b, err := WrapPayloadToBuffer(newMsg, []byte(joinReq))
 
 	if err != nil {
-		return err
+		return fmt.Errorf("[CALLING]: JOIN_CLUSTER[ERROR] - '%s'\n", err.Error())
 	}
 
 	// TODO: Need to dial instead of using tcp write

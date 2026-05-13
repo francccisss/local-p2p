@@ -31,6 +31,8 @@ func (clb *dummyCommChannel) Close() error {
 	return nil
 }
 
+var consumerNode = protocol.NewNode(protocol.NodeAddr{IP: net.ParseIP("127.0.0.1"), Port: 5656}, "receiver", "/files/")
+
 func TestClusterSearch(t *testing.T) {
 	fmt.Println("[Begin Test]: Test Cluster Search")
 	var clusterName protocol.ClusterName = "vim-boys"
@@ -45,8 +47,6 @@ func TestClusterSearch(t *testing.T) {
 
 	//  writes to dchl
 	clientNode.FindCluster(clusterName)
-
-	consumerNode := protocol.NewNode(protocol.NodeAddr{IP: net.ParseIP("127.0.0.1")}, "receiver", "")
 	ConsumerNodeReaderWriterToChannel(*consumerNode, &dchl, clusterName)
 
 	bodyBuf := make([]byte, 4096)
@@ -103,15 +103,13 @@ func TestJoinCluster(t *testing.T) {
 	})
 
 	err := clientNode.JoinCluster(clusterName, clientclt)
-
-	recvNode := protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: 5656}, "receiver", "")
-	ConsumerNodeReaderWriterToChannel(*recvNode, &dchl, clusterName)
-
 	// invokes RCP method
 	if err != nil {
-		protocol.ProtocolErrorWrap(err.Error(), protocol.CALL, protocol.JOIN)
+		fmt.Println(err)
 		t.FailNow()
 	}
+
+	ConsumerNodeReaderWriterToChannel(*consumerNode, &dchl, clusterName)
 
 	bodyBuf := make([]byte, 4096)
 
@@ -134,7 +132,7 @@ func TestJoinCluster(t *testing.T) {
 	err = clientNode.RecvRPCMessage(msg, pl, &dchl, clientclt)
 
 	if err != nil {
-		fmt.Println(protocol.ProtocolErrorWrap(err.Error(), protocol.CALL, protocol.JOIN))
+		fmt.Println(err)
 		t.FailNow()
 	}
 	cl := (*clientclt)[clusterName]
@@ -148,9 +146,66 @@ func TestJoinCluster(t *testing.T) {
 	fmt.Printf("Cluster added to %s\n", clusterName)
 }
 
+func TestProbeFile(t *testing.T) {
+	fmt.Println("[Begin Test]: Test Cluster Search")
+	var clusterName protocol.ClusterName = "vim-boys"
+
+	addr := net.TCPAddr{IP: net.ParseIP("127.0.0.1")}
+	dchl := dummyCommChannel{buf: make(chan []byte, 1), n: 0}
+
+	// different go routine that sends request to receiver node
+	clientNode := protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: 3030}, "requester", "")
+	clientclt := protocol.CreateClusterTable()
+	newCluster := protocol.CreateCluster(clusterName)
+	(*clientclt)[clusterName] = newCluster
+
+	newCluster.NewClusterPeer(consumerNode.Addr, consumerNode.NodeID, &dchl, protocol.IDLE)
+
+	if err := clientNode.ProbeFile(clusterName, clientclt); err != nil {
+		fmt.Println(err)
+		t.FailNow()
+	}
+
+	ConsumerNodeReaderWriterToChannel(*consumerNode, &dchl, clusterName)
+
+	bodyBuf := make([]byte, 4096)
+
+	var mr connection.MessageReader = connection.MessageReader{
+		PayloadBuffer: make([]byte, 0, 4096),
+		JsonBuffer:    make([]byte, 0, 4096),
+		State:         connection.PROCESSING,
+	}
+
+	// Reads reply from receiver
+	dchl.Read(bodyBuf)
+	// receives data from clientNode
+	msg, pl, err := mr.ExtractMessage(bodyBuf)
+	if err != nil {
+		fmt.Println(protocol.ProtocolErrorWrap(err.Error(), protocol.CALL, protocol.JOIN))
+		t.FailNow()
+	}
+
+	// read and sends back response to find cluster method via writing into recvclt
+	err = clientNode.RecvRPCMessage(msg, pl, &dchl, clientclt)
+
+	if err != nil {
+		fmt.Println(err)
+		t.FailNow()
+	}
+	cl := (*clientclt)[clusterName]
+
+	if len(cl.ClusterPeers) == 0 {
+		t.Fatalf("Cluster was not added")
+	}
+	for _, cp := range cl.ClusterPeers {
+		fmt.Printf("Cluster Peer: %+v\n", cp)
+	}
+	fmt.Printf("Cluster added to %s\n", clusterName)
+
+}
+
 // Writes reply to a dummy channel
 func ConsumerNodeReaderWriterToChannel(n protocol.Node, dchl *dummyCommChannel, clusterName protocol.ClusterName) {
-	receiverNode := protocol.NewNode(n.Addr, "receiver", "")
 	recvclt := protocol.CreateClusterTable()
 	(*recvclt)[clusterName] = protocol.CreateCluster(clusterName)
 	bodyBuf := make([]byte, 4096)
@@ -170,7 +225,7 @@ func ConsumerNodeReaderWriterToChannel(n protocol.Node, dchl *dummyCommChannel, 
 	}
 
 	// read and sends back response to find cluster method via writing into recvclt
-	err = receiverNode.RecvRPCMessage(msg, pl, dchl, recvclt)
+	err = n.RecvRPCMessage(msg, pl, dchl, recvclt)
 
 	if err != nil {
 		protocol.ProtocolErrorWrap(err.Error(), protocol.CALL, protocol.JOIN)
