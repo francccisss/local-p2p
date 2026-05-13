@@ -5,7 +5,6 @@ import (
 	"client/utils"
 	"encoding/binary"
 	"fmt"
-	"math"
 	"os"
 	"syscall"
 )
@@ -28,19 +27,19 @@ type FileRequest struct {
 
 // used for RPC Message by receiver to reply to the iniator
 type PieceHeader struct {
-	PieceSize     int64       // from blockSize or remaining bytes
-	PiecePosition int64       // current bytes created / block
-	TotalPieces   int64       // size in bytes / block
-	ClusterName   ClusterName // string ID of the file to be sent
+	PieceSize   int64       // from blockSize or remaining bytes
+	Offset      int64       // current bytes created / block
+	TotalPieces int64       // size in bytes / block
+	ClusterName ClusterName // string ID of the file to be sent
 }
 
 // HashLen, Hash(variable sized), Piece Pos, PieceOffset, total Pieces
 func ParsePieceHeader(header []byte) (PieceHeader, int, error) {
 
 	type Header struct {
-		PieceSize     int64 // from blockSize or remaining bytes
-		PiecePosition int64 // current bytes created / block
-		TotalPieces   int64 // size in bytes / block
+		PieceSize   int64 // from blockSize or remaining bytes
+		Offset      int64 // current bytes created / block
+		TotalPieces int64 // size in bytes / block
 	}
 
 	fmt.Printf("Length of header: %d\n", len(header))
@@ -60,16 +59,16 @@ func ParsePieceHeader(header []byte) (PieceHeader, int, error) {
 	}
 
 	return PieceHeader{
-		PieceSize:     h.PieceSize,
-		PiecePosition: h.PiecePosition,
-		TotalPieces:   h.TotalPieces,
-		ClusterName:   ClusterName(header[4 : 4+hashLen]),
+		PieceSize:   h.PieceSize,
+		Offset:      h.Offset,
+		TotalPieces: h.TotalPieces,
+		ClusterName: ClusterName(header[4 : 4+hashLen]),
 	}, len(header), nil
 }
 
 // Wrapper for ReadFileBuf to return Buffer instead of PieceHeader
 // Header Spec returns PieceHeader bytes:
-// 4 bytes size of Hash + 8 bytes TotalPieces + 8 bytes PiecePosition + 8 total Pieces= 20 byte header
+// 4 bytes size of Hash + 8 bytes TotalPieces + 8 bytes Offset + 8 total Pieces= 20 byte header
 // Variable Length data
 // Hash and DataChunk
 // DataChunk buffer could be variable sized chunk
@@ -81,6 +80,7 @@ func CreateDataPiece(path string, dataInfo *FileRequest) (*bytes.Buffer, int, er
 		return nil, 0, err
 	}
 
+	// TODO: very scuffed way to create the header and buffer for the piece, should be refactored in the future
 	PieceBuffer := new(bytes.Buffer)
 
 	hashLen := len(dataInfo.Hash)
@@ -102,7 +102,7 @@ func CreateDataPiece(path string, dataInfo *FileRequest) (*bytes.Buffer, int, er
 	fmt.Printf("BUF INT VAL: %d, Data Info Offset: %d\n", dataInfo.Offset, binary.LittleEndian.Uint64(PieceBuffer.Bytes()[hashLen+12:]))
 
 	// 8 bytes TotalPieces
-	binary.Write(PieceBuffer, binary.LittleEndian, uint64(math.Ceil(float64(dataInfo.Size)/float64(dataInfo.BlockSize))))
+	binary.Write(PieceBuffer, binary.LittleEndian, dataInfo.Pieces)
 	fmt.Printf("BUF INT VAL: %d, Data Info Total Pieces: %d\n", dataInfo.Size, binary.LittleEndian.Uint64(PieceBuffer.Bytes()[hashLen+12+8:]))
 
 	headerSize := PieceBuffer.Len()
@@ -112,7 +112,6 @@ func CreateDataPiece(path string, dataInfo *FileRequest) (*bytes.Buffer, int, er
 
 }
 
-// multiple peers would need to coordinate how many Pieces
 func ReadFileBuf(path string, dataInfo *FileRequest) ([]byte, error) {
 
 	fd, err := syscall.Open(path, syscall.O_RDONLY, 0644)
@@ -126,6 +125,7 @@ func ReadFileBuf(path string, dataInfo *FileRequest) ([]byte, error) {
 		fmt.Println("Error accessing memory mapped disk")
 		return nil, err
 	}
+	// if the remaining bytes is less than the block size, then only read the remaining bytes
 	rem := min(dataInfo.BlockSize, dataInfo.Size-dataInfo.Offset)
 	tmp := make([]byte, rem)
 	copy(tmp, buf[:rem])

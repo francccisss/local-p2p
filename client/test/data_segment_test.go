@@ -9,6 +9,8 @@ import (
 	"testing"
 )
 
+const TEST_FILE = "what.txt"
+
 func TestDataPieces(t *testing.T) {
 
 	n := protocol.Node{
@@ -16,8 +18,7 @@ func TestDataPieces(t *testing.T) {
 	}
 
 	// pre processing file
-	testFile := "IosevkaTerm.zip"
-	en, path, err := protocol.Checkfile(testFile, n.FILE_LOCATION)
+	en, path, err := protocol.Checkfile(TEST_FILE, n.FILE_LOCATION)
 	if err != nil {
 		fmt.Println(err)
 		t.FailNow()
@@ -37,7 +38,7 @@ func TestDataPieces(t *testing.T) {
 	}
 	// sent by peer to request file
 	dfinfo := protocol.FileRequest{
-		Hash:      testFile,
+		Hash:      TEST_FILE,
 		Size:      finfo.Size(),
 		Offset:    0,
 		BlockSize: int64(os.Getpagesize() * 256),
@@ -55,7 +56,7 @@ func TestDataPieces(t *testing.T) {
 	// loop represents the call to the peer for each pieces
 	for range dfinfo.Pieces {
 		fmt.Printf("Piece Pos: %d\n", dfinfo.Offset)
-		fmt.Printf("Piece Size: %d\n", dfinfo.BlockSize)
+		fmt.Printf("Current Offset: %d\n", dfinfo.BlockSize)
 
 		ds, headerLen, err := protocol.CreateDataPiece(path+en.Name(), &dfinfo)
 
@@ -72,15 +73,15 @@ func TestDataPieces(t *testing.T) {
 
 		fmt.Println("--------------------------------------------------")
 		fmt.Printf("Cluster Name: %s\n", sh.ClusterName)
-		fmt.Printf("Piece Position: %d\n", sh.PiecePosition)
-		fmt.Printf("Piece Size: %d\n", sh.PieceSize)
+		fmt.Printf("Piece Position: %d\n", sh.Offset)
+		fmt.Printf("Current Offset: %d\n", sh.PieceSize)
 		fmt.Printf("Total Pieces: %d\n", sh.TotalPieces)
 		fmt.Printf("Payload Size: %d\n", len(dsBuf[n:]))
-		db.Write(dsBuf[n:])
+		db.Write(dsBuf[n:]) // writes the payload to the buffer, which is the file content without the header
 		fmt.Println("--------------------------------------------------")
 	}
 
-	err = os.WriteFile("./tmp/Iozevka.zip", db.Bytes(), 0644)
+	err = os.WriteFile(fmt.Sprintf("./files/tmp/%s", TEST_FILE), db.Bytes(), 0644)
 	if err != nil {
 		fmt.Println(err.Error())
 		t.FailNow()
