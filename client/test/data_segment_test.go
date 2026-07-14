@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-const TEST_FILE = "what.txt"
+const TEST_FILE = "newfile.webp"
 
 func TestDataPieces(t *testing.T) {
 
@@ -41,7 +41,7 @@ func TestDataPieces(t *testing.T) {
 		Hash:      TEST_FILE,
 		Size:      finfo.Size(),
 		Offset:    0,
-		BlockSize: int64(os.Getpagesize() * 256),
+		BlockSize: int64(os.Getpagesize()),
 	}
 
 	// this is all set from reading the meta file from DHT Server
@@ -58,14 +58,14 @@ func TestDataPieces(t *testing.T) {
 		fmt.Printf("Piece Pos: %d\n", dfinfo.Offset)
 		fmt.Printf("Current Offset: %d\n", dfinfo.BlockSize)
 
-		ds, headerLen, err := protocol.CreateDataPiece(path+en.Name(), &dfinfo)
+		dataPiece, headerLen, err := protocol.CreateDataPiece(path+en.Name(), &dfinfo)
 
 		if err != nil {
 			fmt.Println(err)
 			t.FailNow()
 		}
-		dsBuf := ds.Bytes()
-		sh, n, err := protocol.ParsePieceHeader(dsBuf[:headerLen])
+		dataPieceBuf := dataPiece.Bytes()
+		sh, n, err := protocol.ParsePieceHeader(dataPieceBuf[:headerLen])
 		if err != nil {
 			fmt.Println(err)
 			t.FailNow()
@@ -76,15 +76,15 @@ func TestDataPieces(t *testing.T) {
 		fmt.Printf("Piece Position: %d\n", sh.Offset)
 		fmt.Printf("Current Offset: %d\n", sh.PieceSize)
 		fmt.Printf("Total Pieces: %d\n", sh.TotalPieces)
-		fmt.Printf("Payload Size: %d\n", len(dsBuf[n:]))
-		db.Write(dsBuf[n:]) // writes the payload to the buffer, which is the file content without the header
+		fmt.Printf("Payload Size: %d\n", len(dataPieceBuf[n:]))
+		db.Write(dataPieceBuf[n:]) // writes the payload to the buffer, which is the file content without the header
 		fmt.Println("--------------------------------------------------")
 	}
 
-	err = os.WriteFile(fmt.Sprintf("./files/tmp/%s", TEST_FILE), db.Bytes(), 0644)
-	if err != nil {
-		fmt.Println(err.Error())
-		t.FailNow()
-	}
+	// err = os.WriteFile(fmt.Sprintf("./files/tmp/%s", TEST_FILE), db.Bytes(), 0644)
+	// if err != nil {
+	// 	fmt.Println(err.Error())
+	// 	t.FailNow()
+	// }
 
 }

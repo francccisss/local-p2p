@@ -12,18 +12,18 @@ import (
 )
 
 // buffer is the payload received from a peer
-func ReadRPCMessage(buffer []byte) (RPCMsg, error) {
+func ReadRPCMessage(buffer []byte) (RPCMsgHeader, error) {
 
-	var msg RPCMsg
+	var msg RPCMsgHeader
 	err := json.Unmarshal(buffer, &msg)
 	if err != nil {
 		fmt.Println("Unable to Unmarshal")
-		return RPCMsg{}, err
+		return RPCMsgHeader{}, err
 	}
 	return msg, nil
 }
 
-func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteCloser, clt *ClusterTable) error {
+func (n *Node) RecvRPCMessage(msg RPCMsgHeader, payload Payload, conn io.ReadWriteCloser, clt *ClusterTable) error {
 	if msg.StatusCode == ERROR {
 		return ProtocolErrorWrap(msg.Message, msg.RPCType, msg.Method)
 	}
@@ -32,10 +32,10 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 
 	case CALL: // when peers/nodes send a call RPCType
 
-		var newRPCMsg RPCMsg
+		var newRPCMsgHeader RPCMsgHeader
 		fmt.Println("Call Message")
 
-		newRPCMsg = RPCMsg{
+		newRPCMsgHeader = RPCMsgHeader{
 			Method:      msg.Method,
 			RPCType:     REPLY,
 			NodeID:      n.NodeID,
@@ -46,13 +46,13 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 			Port:        make([]byte, 4),
 		}
 		// setting requesting node's port to host byte ordering
-		binary.LittleEndian.PutUint32(newRPCMsg.Port, uint32(n.Addr.Port))
+		binary.LittleEndian.PutUint32(newRPCMsgHeader.Port, uint32(n.Addr.Port))
 		switch msg.Method {
 
 		case PING_NODE:
 			requstNodePort := binary.LittleEndian.Uint32(msg.Port)
 			requestNodeAddr := NodeAddr{IP: msg.IP, Port: int(requstNodePort)}
-			b, err := HandlePingNodeRequest(newRPCMsg, msg, payload)
+			b, err := HandlePingNodeRequest(newRPCMsgHeader, msg, payload)
 			if err != nil {
 				return ProtocolErrorWrap(err.Error(), CALL, PING_NODE)
 			}
@@ -62,7 +62,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 			}
 
 		case PING_CLUSTER:
-			b, err := HandlePingClusterRequest(newRPCMsg, msg, payload)
+			b, err := HandlePingClusterRequest(newRPCMsgHeader, msg, payload)
 			if err != nil {
 				return ProtocolErrorWrap(err.Error(), CALL, PING_CLUSTER)
 			}
@@ -72,12 +72,12 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 			}
 
 		case FIND_CLUSTER:
-			b, err := HandleFindClusterRequest(newRPCMsg, msg, payload, clt)
+			b, err := HandleFindClusterRequest(newRPCMsgHeader, msg, payload, clt)
 			// Sends an error that a cluster does not exist
 			if err != nil {
-				newRPCMsg.StatusCode = ERROR
-				newRPCMsg.Message = err.Error()
-				b, err := WrapPayloadToBuffer(newRPCMsg, nil)
+				newRPCMsgHeader.StatusCode = ERROR
+				newRPCMsgHeader.Message = err.Error()
+				b, err := WrapPayloadToBuffer(newRPCMsgHeader, nil)
 				if err != nil {
 					return ProtocolErrorWrap(err.Error(), CALL, FIND_CLUSTER)
 				}
@@ -94,7 +94,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 				return ProtocolErrorWrap(err.Error(), CALL, FIND_CLUSTER)
 			}
 		case JOIN:
-			b, err := HandleJoinClusterRequest(newRPCMsg, msg, payload, conn, clt)
+			b, err := HandleJoinClusterRequest(newRPCMsgHeader, msg, payload, conn, clt)
 			if err != nil {
 				return ProtocolErrorWrap(err.Error(), CALL, JOIN)
 			}
@@ -105,12 +105,12 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 			return nil
 
 		case PROBE:
-			b, err := HandleProbeRequest(newRPCMsg, msg, payload, n.FILE_LOCATION)
+			b, err := HandleProbeRequest(newRPCMsgHeader, msg, payload, n.FILE_LOCATION)
 			if err != nil {
 				fmt.Printf("[PROBE REQUEST]: %s\n", err)
-				newRPCMsg.Message = err.Error()
-				newRPCMsg.StatusCode = ERROR
-				b, err := WrapPayloadToBuffer(newRPCMsg, nil)
+				newRPCMsgHeader.Message = err.Error()
+				newRPCMsgHeader.StatusCode = ERROR
+				b, err := WrapPayloadToBuffer(newRPCMsgHeader, nil)
 				if err != nil {
 					return fmt.Errorf("Unable to send message")
 				}
@@ -120,7 +120,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 				}
 			}
 
-			buf, err := WrapPayloadToBuffer(newRPCMsg, b)
+			buf, err := WrapPayloadToBuffer(newRPCMsgHeader, b)
 			if err != nil {
 				return ProtocolErrorWrap(err.Error(), CALL, PROBE)
 			}
@@ -130,7 +130,8 @@ func (n *Node) RecvRPCMessage(msg RPCMsg, payload []byte, conn io.ReadWriteClose
 			}
 
 		case LEECH:
-			return HandleLeechRequest(newRPCMsg, msg, payload, conn, n.FILE_LOCATION)
+			fmt.Printf("[TESTING]: %s received a LEECH REQUEST\n", n.NodeID)
+			return HandleLeechRequest(newRPCMsgHeader, msg, payload, conn, n.FILE_LOCATION)
 		}
 
 	case REPLY: // when peers/nodes send a call RPCType
@@ -181,7 +182,7 @@ func (n *Node) FindCluster(cname ClusterName) error {
 	var wg sync.WaitGroup
 
 	payload := ClusterRequest(cname)
-	newMsg := RPCMsg{
+	newMsg := RPCMsgHeader{
 		NodeID:  n.NodeID,
 		Message: "where cluster?",
 		Method:  FIND_CLUSTER,
@@ -225,7 +226,7 @@ func (n *Node) FindCluster(cname ClusterName) error {
 // the existing TCP connection
 func (n *Node) PingNodes() error {
 
-	var newMsg RPCMsg = RPCMsg{
+	var newMsg RPCMsgHeader = RPCMsgHeader{
 		RPCType:    CALL,
 		IP:         n.Addr.IP,
 		Method:     PING_NODE,
@@ -256,7 +257,7 @@ func (n *Node) PingNodes() error {
 // Pinging cluster uses the existing TCP connections for communication
 func (n *Node) PingCluster(cname ClusterName, clt *ClusterTable) error {
 
-	var newMsg RPCMsg = RPCMsg{
+	var newMsg RPCMsgHeader = RPCMsgHeader{
 		RPCType:    CALL,
 		Method:     PING_CLUSTER,
 		StatusCode: SUCCESS,
@@ -295,7 +296,7 @@ func (n *Node) ProbeFile(cname ClusterName, clt *ClusterTable) error {
 	if !ok {
 		return fmt.Errorf("[CALLING]: PROBE[ERROR] - 'Cluster does not exist'")
 	}
-	newMsg := RPCMsg{
+	newMsg := RPCMsgHeader{
 		RPCType: CALL,
 		Method:  PROBE,
 		NodeID:  n.NodeID,
@@ -338,7 +339,7 @@ func (n *Node) ProbeFile(cname ClusterName, clt *ClusterTable) error {
 
 func (n *Node) JoinCluster(cname ClusterName, clt *ClusterTable) error {
 
-	newMsg := RPCMsg{
+	newMsg := RPCMsgHeader{
 		NodeID:  n.NodeID,
 		IP:      n.Addr.IP,
 		Port:    make([]byte, 4),
@@ -375,13 +376,17 @@ func (n *Node) JoinCluster(cname ClusterName, clt *ClusterTable) error {
 	return nil
 }
 
-func (n *Node) Leech(cname ClusterName, spawnThreads bool, fr FileRequest, clt *ClusterTable) error {
+func (n *Node) Leech(cname ClusterName, spawnThreads bool, fr FileRequest, clt *ClusterTable, isConnectionExist bool) error {
 
 	c, ok := (*clt)[cname]
 	if !ok {
 		return fmt.Errorf("Cluster does not exist")
 	}
 
+	if len(c.ClusterPeers) == 0 {
+		return fmt.Errorf("There are no peers to leech from")
+	}
+	fmt.Printf("[LEECH REQUEST]: number of peers in '%s' cluster: %d\n", cname, len(c.ClusterPeers))
 	c.CurrentNode.Status = LEECHING
 
 	if spawnThreads {
@@ -404,7 +409,7 @@ func (n *Node) Leech(cname ClusterName, spawnThreads bool, fr FileRequest, clt *
 	if err != nil {
 		return err
 	}
-	newMsg := RPCMsg{
+	newMsg := RPCMsgHeader{
 		RPCType: CALL,
 		IP:      n.Addr.IP,
 		NodeID:  n.NodeID,
@@ -420,7 +425,13 @@ func (n *Node) Leech(cname ClusterName, spawnThreads bool, fr FileRequest, clt *
 		if err != nil {
 			continue
 		}
-		err = SendMsg(buf, p.Addr)
+		if !isConnectionExist {
+			err = SendMsg(buf, p.Addr)
+			if err != nil {
+				continue
+			}
+		}
+		err = SendViaExistingConn(buf, p.Conn)
 		if err != nil {
 			continue
 		}
@@ -431,8 +442,8 @@ func (n *Node) Leech(cname ClusterName, spawnThreads bool, fr FileRequest, clt *
 	return nil
 }
 
-// Wraps the RPCMsg and the payload into a buffer and returns it
-func WrapPayloadToBuffer(msg RPCMsg, payload []byte) ([]byte, error) {
+// Wraps the RPCMsgHeader and the payload into a buffer and returns it
+func WrapPayloadToBuffer(msg RPCMsgHeader, payload []byte) ([]byte, error) {
 	msg.PayloadSize = uint32(len(payload))
 	b, err := json.Marshal(msg)
 	if err != nil {

@@ -34,7 +34,7 @@ type PieceHeader struct {
 }
 
 // HashLen, Hash(variable sized), Piece Pos, PieceOffset, total Pieces
-func ParsePieceHeader(header []byte) (PieceHeader, int, error) {
+func ParsePieceHeader(header []byte) (pieceHeader PieceHeader, HeaderLength int, Error error) {
 
 	type Header struct {
 		PieceSize   int64 // from blockSize or remaining bytes
@@ -50,7 +50,7 @@ func ParsePieceHeader(header []byte) (PieceHeader, int, error) {
 
 	var h Header
 	hreader := bytes.NewReader(header[4+hashLen:]) // dont include string ClusterName
-	fmt.Printf("header len remaining: %d", hreader.Len())
+	fmt.Printf("header len remaining: %d\n", hreader.Len())
 
 	err := binary.Read(hreader, binary.LittleEndian, &h)
 
@@ -68,11 +68,11 @@ func ParsePieceHeader(header []byte) (PieceHeader, int, error) {
 
 // Wrapper for ReadFileBuf to return Buffer instead of PieceHeader
 // Header Spec returns PieceHeader bytes:
-// 4 bytes size of Hash + 8 bytes TotalPieces + 8 bytes Offset + 8 total Pieces= 20 byte header
+// 4 bytes size of Hash + 8 bytes PiecesSize + 8 bytes Offset + 8 bytes of TotalPieces = 20 byte header
 // Variable Length data
 // Hash and DataChunk
 // DataChunk buffer could be variable sized chunk
-func CreateDataPiece(path string, dataInfo *FileRequest) (*bytes.Buffer, int, error) {
+func CreateDataPiece(path string, dataInfo *FileRequest) (DataPiece *bytes.Buffer, HeaderLength int, Error error) {
 
 	fmt.Printf("Creating Pieces for %s\n", dataInfo.Hash)
 	buf, err := ReadFileBuf(path, dataInfo)
@@ -81,34 +81,38 @@ func CreateDataPiece(path string, dataInfo *FileRequest) (*bytes.Buffer, int, er
 	}
 
 	// TODO: very scuffed way to create the header and buffer for the piece, should be refactored in the future
-	PieceBuffer := new(bytes.Buffer)
+	DataPieceBuffer := new(bytes.Buffer)
 
 	hashLen := len(dataInfo.Hash)
-	PieceBuffer.Grow(hashLen + 28 + len(buf))
+	DataPieceBuffer.Grow(hashLen + 28 + len(buf))
 
 	hashLenBuf := make([]byte, 4)
 	binary.LittleEndian.PutUint32(hashLenBuf, uint32(hashLen))
 
-	binary.Write(PieceBuffer, binary.LittleEndian, uint32(hashLen))
-	PieceBuffer.Write([]byte(dataInfo.Hash))
-	fmt.Printf("BUF INT VAL: %d, HASH LEN in Bytes: B>%d, String %s\n", hashLen, hashLenBuf, PieceBuffer.Bytes()[:hashLen])
+	// 4 bytes hash
+	binary.Write(DataPieceBuffer, binary.LittleEndian, uint32(hashLen))
+	DataPieceBuffer.Write([]byte(dataInfo.Hash))
+	fmt.Printf("BUF INT VAL: %d, HASH LEN in Bytes: B>%d, String %s\n", hashLen, hashLenBuf, DataPieceBuffer.Bytes()[:hashLen])
 
 	// 8 bytes Piece Size
-	binary.Write(PieceBuffer, binary.LittleEndian, uint64(len(buf)))
-	fmt.Printf("BUF INT VAL: %d, Data Info Piece Size: %d\n", len(buf), binary.LittleEndian.Uint64(PieceBuffer.Bytes()[hashLen+4:]))
+	binary.Write(DataPieceBuffer, binary.LittleEndian, uint64(len(buf)))
+	fmt.Printf("BUF INT VAL: %d, Data Info Piece Size: %d\n", len(buf), binary.LittleEndian.Uint64(DataPieceBuffer.Bytes()[hashLen+4:]))
 
 	// 8 bytes Offset
-	binary.Write(PieceBuffer, binary.LittleEndian, uint64(dataInfo.Offset/dataInfo.BlockSize)) // get current Piece
-	fmt.Printf("BUF INT VAL: %d, Data Info Offset: %d\n", dataInfo.Offset, binary.LittleEndian.Uint64(PieceBuffer.Bytes()[hashLen+12:]))
+	binary.Write(DataPieceBuffer, binary.LittleEndian, uint64(dataInfo.Offset/dataInfo.BlockSize)) // get current Piece
+	fmt.Printf("BUF INT VAL: %d, Data Info Offset: %d\n", dataInfo.Offset, binary.LittleEndian.Uint64(DataPieceBuffer.Bytes()[hashLen+12:]))
 
 	// 8 bytes TotalPieces
-	binary.Write(PieceBuffer, binary.LittleEndian, dataInfo.Pieces)
-	fmt.Printf("BUF INT VAL: %d, Data Info Total Pieces: %d\n", dataInfo.Size, binary.LittleEndian.Uint64(PieceBuffer.Bytes()[hashLen+12+8:]))
+	binary.Write(DataPieceBuffer, binary.LittleEndian, dataInfo.Pieces)
+	fmt.Printf("BUF INT VAL: %d, Data Info Total Pieces: %d\n", dataInfo.Size, binary.LittleEndian.Uint64(DataPieceBuffer.Bytes()[hashLen+12+8:]))
 
-	headerSize := PieceBuffer.Len()
-	PieceBuffer.Write(buf)
+	// IMPORTANT: this reads the total len BEFORE appending the data from reading the file
+	// since all pre previous operations were mainly for constructing the header
+	// of the current piece.
+	headerSize := DataPieceBuffer.Len()
+	DataPieceBuffer.Write(buf)
 
-	return PieceBuffer, headerSize, nil
+	return DataPieceBuffer, headerSize, nil
 
 }
 

@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-func HandleFindClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, clt *ClusterTable) ([]byte, error) {
+func HandleFindClusterRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, payload []byte, clt *ClusterTable) ([]byte, error) {
 	plcname := ClusterRequest(payload)
 	// will always send a string of cluster name to peer
 	fmt.Printf("Checking cluster table for '%s' cluster\n", plcname)
@@ -36,38 +36,38 @@ func HandleFindClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, clt 
 		return nil, err
 
 	}
-	buff, err := WrapPayloadToBuffer(newRPCMsg, b)
+	buff, err := WrapPayloadToBuffer(newRPCMsgHeader, b)
 	if err != nil {
 		return nil, err
 	}
 	return buff, nil
 }
 
-func HandlePingClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte) ([]byte, error) {
+func HandlePingClusterRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, payload []byte) ([]byte, error) {
 
-	newRPCMsg.Message = "Pong"
+	newRPCMsgHeader.Message = "Pong"
 	pr := PingRequest(payload)
 	fmt.Printf("[CALL]: PING - pinged by neighboring node %s\n", pr)
 
 	var newPingResponse PingResponse = PingResponse(NodeStatusMap[ACTIVE]) // interesting unnessary type assertion
-	b, err := WrapPayloadToBuffer(newRPCMsg, []byte(newPingResponse))
+	b, err := WrapPayloadToBuffer(newRPCMsgHeader, []byte(newPingResponse))
 	if err != nil {
 		return nil, err
 	}
 	return b, nil
 }
 
-func HandlePingNodeRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte) ([]byte, error) {
+func HandlePingNodeRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, payload []byte) ([]byte, error) {
 	var newPingResponse PingResponse = PingResponse(NodeStatusMap[ACTIVE])
-	newRPCMsg.Message = "Pong"
-	b, err := WrapPayloadToBuffer(newRPCMsg, []byte(newPingResponse))
+	newRPCMsgHeader.Message = "Pong"
+	b, err := WrapPayloadToBuffer(newRPCMsgHeader, []byte(newPingResponse))
 	if err != nil {
 		return nil, err
 	}
 	return b, nil
 }
 
-func HandleLeechRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn io.ReadWriteCloser, FILE_LOCATION string) error {
+func HandleLeechRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, payload []byte, conn io.ReadWriteCloser, FILE_LOCATION string) error {
 
 	// a call to leech received a single SegmentHeader
 	// a reply to leech receives an array of SegmentHeaders
@@ -80,9 +80,9 @@ func HandleLeechRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn io.Re
 	en, path, err := Checkfile(fr.Hash, FILE_LOCATION)
 	if err != nil {
 		fmt.Println("Unable to unmarshal data segment")
-		newRPCMsg.Message = err.Error()
-		newRPCMsg.StatusCode = ERROR
-		buff, err := WrapPayloadToBuffer(newRPCMsg, nil)
+		newRPCMsgHeader.Message = err.Error()
+		newRPCMsgHeader.StatusCode = ERROR
+		buff, err := WrapPayloadToBuffer(newRPCMsgHeader, nil)
 		if err != nil {
 			fmt.Println("[ERROR]: Unable to send message")
 		}
@@ -96,7 +96,7 @@ func HandleLeechRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn io.Re
 	if err != nil {
 		return err
 	}
-	b, err := WrapPayloadToBuffer(newRPCMsg, buf.Bytes())
+	b, err := WrapPayloadToBuffer(newRPCMsgHeader, buf.Bytes())
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func HandleLeechRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn io.Re
 	return nil
 }
 
-func HandleJoinClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn io.ReadWriteCloser, clt *ClusterTable) ([]byte, error) {
+func HandleJoinClusterRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, payload []byte, conn io.ReadWriteCloser, clt *ClusterTable) ([]byte, error) {
 	clusterName := JoinRequest(payload)
 
 	cl, ok := (*clt)[clusterName]
@@ -115,17 +115,17 @@ func HandleJoinClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn
 		return nil, fmt.Errorf("'Cluster %s does not exist'\n", clusterName)
 	}
 
-	fmt.Printf("[CALL]: JOIN - 'Adding new peer to %s cluster\n", cl.ClusterName)
+	fmt.Printf("[CALL]: JOIN - 'Adding '%s' as new peer to '%s cluster'\n", msg.NodeID, cl.ClusterName)
 	ncp := cl.NewClusterPeer(NodeAddr{IP: msg.IP, Port: int(binary.LittleEndian.Uint32(msg.Port))}, msg.NodeID, conn, IDLE)
 	err := cl.AppendClusterPeer(*ncp)
 	if err != nil {
 		return nil, err
 	}
 
-	newRPCMsg.StatusCode = SUCCESS
+	newRPCMsgHeader.StatusCode = SUCCESS
 
 	joinResponse := JoinResponse{
-		NodeID:      newRPCMsg.NodeID,
+		NodeID:      newRPCMsgHeader.NodeID,
 		Status:      cl.CurrentNode.Status,
 		ClusterName: cl.ClusterName,
 	}
@@ -134,7 +134,7 @@ func HandleJoinClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn
 		return nil, err
 	}
 
-	buf, err := WrapPayloadToBuffer(newRPCMsg, b)
+	buf, err := WrapPayloadToBuffer(newRPCMsgHeader, b)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +142,7 @@ func HandleJoinClusterRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, conn
 	return buf, nil
 }
 
-func HandleProbeRequest(newRPCMsg RPCMsg, msg RPCMsg, payload []byte, FILE_LOCATION string) ([]byte, error) {
+func HandleProbeRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, payload []byte, FILE_LOCATION string) ([]byte, error) {
 
 	var preq ProbeRequest
 	err := json.Unmarshal(payload, &preq)

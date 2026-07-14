@@ -51,7 +51,7 @@ const (
 )
 
 // MsgType could be either reply or call
-type RPCMsg struct {
+type RPCMsgHeader struct {
 	RPCType     MsgType
 	IP          []byte
 	Port        []byte
@@ -61,6 +61,8 @@ type RPCMsg struct {
 	StatusCode  StatusCode
 	Message     string
 }
+
+type Payload []byte
 
 type ClusterRequest string
 

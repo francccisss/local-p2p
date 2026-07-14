@@ -14,7 +14,7 @@ type dummyCommChannel struct {
 }
 
 func (clb *dummyCommChannel) Read(p []byte) (n int, err error) {
-	// it reads all of clb.buf into
+	// it reads all of clb.buf into rb
 	rb := <-clb.buf
 	fmt.Printf("READ FROM BUF TO P %d\n", len(rb))
 	readBytes := copy(p, rb[:clb.n])
@@ -31,7 +31,7 @@ func (clb *dummyCommChannel) Close() error {
 	return nil
 }
 
-var consumerNode = protocol.NewNode(protocol.NodeAddr{IP: net.ParseIP("127.0.0.1"), Port: 5656}, "receiver", "/files/")
+var receiverNode = protocol.NewNode(protocol.NodeAddr{IP: net.ParseIP("127.0.0.1"), Port: 5656}, "receiver", "/files/")
 
 const fileHash_test = "what.txt"
 
@@ -49,7 +49,7 @@ func TestClusterSearch(t *testing.T) {
 
 	//  writes to dchl
 	clientNode.FindCluster(clusterName)
-	ConsumerNodeReaderWriterToChannel(*consumerNode, &dchl, clusterName)
+	ConsumerNodeReaderWriterToChannel(*receiverNode, &dchl, clusterName)
 
 	bodyBuf := make([]byte, 4096)
 
@@ -111,7 +111,7 @@ func TestJoinCluster(t *testing.T) {
 		t.FailNow()
 	}
 
-	ConsumerNodeReaderWriterToChannel(*consumerNode, &dchl, clusterName)
+	ConsumerNodeReaderWriterToChannel(*receiverNode, &dchl, clusterName)
 
 	bodyBuf := make([]byte, 4096)
 
@@ -145,7 +145,6 @@ func TestJoinCluster(t *testing.T) {
 	for _, cp := range cl.ClusterPeers {
 		fmt.Printf("Cluster Peer: %+v\n", cp)
 	}
-	fmt.Printf("Cluster added to %s\n", clusterName)
 }
 
 func TestProbeFile(t *testing.T) {
@@ -162,7 +161,7 @@ func TestProbeFile(t *testing.T) {
 
 	(*clientclt)[clusterName] = newCluster
 
-	receiverPeer := newCluster.NewClusterPeer(consumerNode.Addr, consumerNode.NodeID, &dchl, protocol.IDLE)
+	receiverPeer := newCluster.NewClusterPeer(receiverNode.Addr, receiverNode.NodeID, &dchl, protocol.IDLE)
 	newCluster.AppendClusterPeer(*receiverPeer)
 	fmt.Printf("%+v\n", (*clientclt)[clusterName])
 
@@ -171,7 +170,7 @@ func TestProbeFile(t *testing.T) {
 		t.FailNow()
 	}
 
-	ConsumerNodeReaderWriterToChannel(*consumerNode, &dchl, clusterName)
+	ConsumerNodeReaderWriterToChannel(*receiverNode, &dchl, clusterName)
 
 	bodyBuf := make([]byte, 4096)
 
@@ -200,6 +199,40 @@ func TestProbeFile(t *testing.T) {
 	}
 
 }
+
+func TestDataDelivery(t *testing.T) {
+	var clusterName protocol.ClusterName = "vim-boys"
+
+	addr := protocol.NodeAddr{IP: net.ParseIP("127.0.0.1"), Port: 5656}
+
+	requestingNode := protocol.NewNode(addr, "requester", "")
+	clt := protocol.CreateClusterTable()
+	(*clt)[clusterName] = protocol.CreateCluster(clusterName, "")
+
+	dhcl := dummyCommChannel{
+		buf: make(chan []byte, 1),
+		n:   0,
+	}
+
+	cluster := (*clt)[clusterName]
+	cpeer := cluster.NewClusterPeer(receiverNode.Addr, receiverNode.NodeID, &dhcl, protocol.SEEDING)
+	cluster.AppendClusterPeer(*cpeer)
+
+	go func() {
+		recvclt := protocol.CreateClusterTable()
+		(*recvclt)[clusterName] = protocol.CreateCluster(clusterName, fileHash_test)
+		recvCluster := (*recvclt)[clusterName]
+		recvcPeer := cluster.NewClusterPeer(requestingNode.Addr, requestingNode.NodeID, &dhcl, protocol.LEECHING)
+		recvCluster.AppendClusterPeer(*recvcPeer)
+		connection.MessageHandler(&dhcl, receiverNode, recvclt)
+	}()
+
+	requestingNode.Leech(clusterName, false, protocol.FileRequest{}, clt, true)
+
+	connection.MessageHandler(&dhcl, requestingNode, clt)
+}
+
+// Writes reply to a dummy channel
 
 // Writes reply to a dummy channel
 func ConsumerNodeReaderWriterToChannel(n protocol.Node, dchl *dummyCommChannel, clusterName protocol.ClusterName) {

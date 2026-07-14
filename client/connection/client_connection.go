@@ -27,29 +27,29 @@ const (
 type MessageReader struct {
 	PayloadBuffer []byte
 	JsonBuffer    []byte
-	MetaJson      protocol.RPCMsg
+	MetaJson      protocol.RPCMsgHeader
 	PayloadSize   int
 	MetaJsonSize  uint32
 	Phase         PHASE
 	State         MessageReaderState
 }
-type Payload []byte
 
 func HandleConn(l *net.Listener, node *protocol.Node, clt *protocol.ClusterTable) error {
 
 	for {
+
 		// creates a new file descriptor for incoming tcp connection from node/peer
 		conn, err := (*l).Accept()
 		if err != nil {
 			fmt.Printf("Connection from %s failed\n", conn.LocalAddr().String())
 			return err
 		}
+		fmt.Print("Received TCP Connection\n")
 		go MessageHandler(conn, node, clt)
 	}
 }
 
-// handle's its own socket after establshing connection
-// so keeping conn in a loop of Read makes it so we don't have to keep accepting requests
+// Loops through its current connection to a node
 func MessageHandler(conn io.ReadWriteCloser, node *protocol.Node, clt *protocol.ClusterTable) {
 
 	bodyBuf := make([]byte, 4096)
@@ -58,10 +58,10 @@ func MessageHandler(conn io.ReadWriteCloser, node *protocol.Node, clt *protocol.
 		JsonBuffer:    make([]byte, 0, 4096),
 		State:         PROCESSING,
 	}
-	fmt.Print("Received TCP Connection\n")
 	for {
 		// Reads from the file descriptor set by the kernel for the node that was accepted
 		n, err := conn.Read(bodyBuf)
+
 		if n == 0 {
 			return
 		}
@@ -93,7 +93,7 @@ func MessageHandler(conn io.ReadWriteCloser, node *protocol.Node, clt *protocol.
 
 }
 
-func (mr *MessageReader) ExtractMessage(buffer []byte) (protocol.RPCMsg, Payload, error) {
+func (mr *MessageReader) ExtractMessage(buffer []byte) (protocol.RPCMsgHeader, protocol.Payload, error) {
 
 	for {
 		switch mr.Phase {
