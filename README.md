@@ -128,6 +128,17 @@ for the next Offset of the file.
 
 
 
+## Extending File Attributes using xattr
+
+In linux there is a feature where it makes it possible to extend the existing prefix header of a file with a custom key:value pair, 
+the `HashID` will be stored within a file's prefix header. since the operating system does not interpret this field whether or not a value exists.
+
+So keeping the generated `HashID` would make it much more easier to work with rather than having to use an external meta data or pushing it on top of the sequence of bytes from the existing file and do a back and forth parsing of the embedded `HashID`
+
+More on wiki: [Extended File Attributes for Linux](https://en.wikipedia.org/wiki/Extended_file_attributes)
+
+
+
 ## How to run
 
 > Not yet implemented

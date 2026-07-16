@@ -2,12 +2,7 @@ package test
 
 import (
 	"client/protocol"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
-	"os"
-	_ "os"
 	"strings"
 	"testing"
 
@@ -17,31 +12,20 @@ import (
 var src = "./files/text.txt"
 
 func TestHashEmbedding(t *testing.T) {
-	hash := sha256.New()
-	f, err := os.Open(src)
+	metaData, err := protocol.NewMetaFileDescriptor(src)
 	if err != nil {
 		t.Fatal(err.Error())
+
 	}
 
-	_, err = io.Copy(hash, f)
-	if err != nil {
-		t.Fatal(err.Error())
-	}
-	hashID := hex.EncodeToString(hash.Sum(nil))
-
-	fmt.Printf("[ TESTING ]: Generated HashID: %s\n", hash)
-	err = protocol.EmbbedFileHashID(hashID, src)
-	if err != nil {
-		t.Fatal(err.Error())
-	}
-	isSame, returned, err := VerifyEmbeddedHash(src, hashID, protocol.ATTRIBUTE_STRING)
+	isSame, returned, err := VerifyEmbeddedHash(src, metaData.Hash, protocol.ATTRIBUTE_STRING)
 	if err != nil {
 		t.Fatal(err.Error())
 	}
 	if !isSame {
-		t.Fatalf("[ TESTING ]: Expected FileHash: %s\nReturned FileHash: %s\n", hashID, returned)
+		t.Fatalf("[ TESTING ]: Expected FileHash: %s\nReturned FileHash: %s\n", metaData.Hash, returned)
 	}
-	fmt.Printf("[ TESTING ]: FileHash: '%s' Embedded into '%s'\n", returned, src)
+	fmt.Printf("[ TESTING ]: Created new FILE META DATA\n%+v\n", metaData)
 }
 
 func VerifyEmbeddedHash(src string, hashID protocol.FileHash, key string) (bool, string, error) {
