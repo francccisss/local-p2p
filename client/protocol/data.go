@@ -155,7 +155,7 @@ func ReadFileBuf(path string, dataInfo *FileRequest) ([]byte, error) {
 // the `HashID` within that header.
 const ATTRIBUTE_STRING = "user.file_hash"
 
-func NewMetaFileDescriptor(fileSource string) (FileMetaData, error) {
+func NewFileMetaData(fileSource string) (FileMetaData, error) {
 
 	fmt.Printf("[ METAFILE ]: Checking if the file '%s' Exists\n", fileSource)
 	file, err := os.Open(fileSource)

@@ -12,7 +12,7 @@ import (
 var src = "./files/text.txt"
 
 func TestHashEmbedding(t *testing.T) {
-	metaData, err := protocol.NewMetaFileDescriptor(src)
+	metaData, err := protocol.NewFileMetaData(src)
 	if err != nil {
 		t.Fatal(err.Error())
 
