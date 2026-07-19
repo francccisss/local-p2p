@@ -205,7 +205,7 @@ func TestDataDelivery(t *testing.T) {
 
 	addr := protocol.NodeAddr{IP: net.ParseIP("127.0.0.1"), Port: 5656}
 
-	requestingNode := protocol.NewNode(addr, "requester", "")
+	requestingNode := protocol.NewNode(addr, "requester", "/files/")
 	clt := protocol.CreateClusterTable()
 	(*clt)[clusterName] = protocol.CreateCluster(clusterName, "")
 
@@ -217,6 +217,19 @@ func TestDataDelivery(t *testing.T) {
 	cluster := (*clt)[clusterName]
 	cpeer := cluster.NewClusterPeer(receiverNode.Addr, receiverNode.NodeID, &dhcl, protocol.SEEDING)
 	cluster.AppendClusterPeer(*cpeer)
+	metaData, err := protocol.NewFileMetaData("./files/new_dir/text.txt")
+	if err != nil {
+		t.Fatal(err.Error())
+
+	}
+
+	requestingNode.Leech(clusterName, false, protocol.FileRequest{
+		Hash:      metaData.Hash,
+		Size:      int64(metaData.Size),
+		Offset:    0,
+		Pieces:    int64(metaData.Pieces),
+		BlockSize: metaData.BlockSize,
+	}, clt, true)
 
 	go func() {
 		recvclt := protocol.CreateClusterTable()
@@ -226,8 +239,6 @@ func TestDataDelivery(t *testing.T) {
 		recvCluster.AppendClusterPeer(*recvcPeer)
 		connection.MessageHandler(&dhcl, receiverNode, recvclt)
 	}()
-
-	requestingNode.Leech(clusterName, false, protocol.FileRequest{}, clt, true)
 
 	connection.MessageHandler(&dhcl, requestingNode, clt)
 }

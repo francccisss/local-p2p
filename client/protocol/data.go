@@ -8,9 +8,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math"
 	"os"
+	"strings"
 	"syscall"
 
+	"github.com/pkg/xattr"
 	"golang.org/x/sys/unix"
 )
 
@@ -19,6 +22,7 @@ type FileMetaData struct {
 	Hash      string
 	Size      uint64
 	BlockSize int64
+	Pieces    uint64
 }
 
 // used for RPC Message by requester
@@ -71,12 +75,8 @@ func ParsePieceHeader(header []byte) (pieceHeader PieceHeader, HeaderLength int,
 	}, len(header), nil
 }
 
-// Wrapper for ReadFileBuf to return Buffer instead of PieceHeader
-// Header Spec returns PieceHeader bytes:
-// 4 bytes size of Hash + 8 bytes PiecesSize + 8 bytes Offset + 8 bytes of TotalPieces = 20 byte header
-// Variable Length data
-// Hash and DataChunk
-// DataChunk buffer could be variable sized chunk
+// Returns a buffer that contains a PieceHeader + DataPiece Buffer to be read by the
+// node that requested to leech to the node that called this function.
 func CreateDataPiece(path string, dataInfo *FileRequest) (DataPiece *bytes.Buffer, HeaderLength int, Error error) {
 
 	fmt.Printf("Creating Pieces for %s\n", dataInfo.Hash)
@@ -192,6 +192,7 @@ func NewFileMetaData(fileSource string) (FileMetaData, error) {
 		Size:      fileSize,
 		BlockSize: int64(os.Getpagesize()),
 	}
+	newMetaData.Pieces = uint64(math.Ceil(float64(newMetaData.Size) / float64(newMetaData.BlockSize)))
 
 	return newMetaData, nil
 }
@@ -227,6 +228,7 @@ func Checkfile(fileHash FileHash, FILE_LOCATION string) (os.DirEntry, string, er
 	wd := []string{programwd}
 	wd = append(wd, FILE_LOCATION)
 
+	fmt.Println(wd)
 	entries, err := os.ReadDir(utils.ConcatStr(&wd))
 
 	entry, err := recursiveFileSearch(fileHash, entries, &wd)
@@ -238,28 +240,51 @@ func Checkfile(fileHash FileHash, FILE_LOCATION string) (os.DirEntry, string, er
 	return entry, utils.ConcatStr(&wd), nil
 }
 
+func VerifyEmbeddedHash(src string, hashID FileHash, key string) (bool, string, error) {
+
+	b, err := xattr.Get(src, key)
+	if err != nil {
+		return false, "", err
+	}
+	if strings.Compare(string(b), hashID) != 0 {
+		return false, "", nil
+	}
+	return true, string(b), nil
+
+}
+
 // initializes `wd` with the current working directory of the program
 // appended with the file location of the user and as `entries` array is iterated
 // and if the current entry is a Directory the `wd` is appended with the current name
 // of the directory, and if not then continue.
 // If the current file is not a directory and matches the `fileKey` the return the entry of that file
-
 func recursiveFileSearch(fileHash FileHash, entries []os.DirEntry, wd *[]string) (os.DirEntry, error) {
 	for _, entry := range entries {
 		info, err := entry.Info()
 		entryName := info.Name()
-		fmt.Printf("Entry located: %s\n", entryName)
+		fmt.Printf("[ File Search ]: Entry located: %s\n", entryName)
 		if err != nil {
 			fmt.Printf("Error Unable to get info for file: %s\n", entryName)
 			fmt.Printf("Reason: %s\n", err)
 			continue
 		}
 		if !info.IsDir() {
-			if entryName == fileHash {
-				return entry, nil
+			srcPath := utils.ConcatStr(wd) + entryName
+			fmt.Printf("[ File Search ]: Info.Name: `%s` - Current WD: '%s'\n", info.Name(), srcPath)
+			hashBuf, err := xattr.Get(srcPath, ATTRIBUTE_STRING)
+			if err != nil {
+				fmt.Println("[ File Search ]: Unable to get extended attribute")
+				return nil, err
 			}
-			continue
+			bufToStr := string(hashBuf)
+			if strings.Compare(bufToStr, fileHash) != 0 {
+				fmt.Printf("[ File Search ]: '%s' Not Matching hash to '%s'\n", entryName, fileHash)
+				continue
+			}
+			fmt.Printf("[ File Search ]: Found matching hash values: '%s' on '%s'\n", info.Name(), bufToStr)
+			return entry, nil
 		}
+		fmt.Println("[ File Search ]: Skipping directory")
 		currentDirectory := entryName + "/"
 		*wd = append(*wd, currentDirectory)
 		curDirEntries, err := os.ReadDir(utils.ConcatStr(wd))

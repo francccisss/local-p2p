@@ -130,7 +130,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsgHeader, payload Payload, conn io.ReadWri
 			}
 
 		case LEECH:
-			fmt.Printf("[TESTING]: %s received a LEECH REQUEST\n", n.NodeID)
+			fmt.Printf("[TESTING]: '%s' received a LEECH REQUEST\n", n.NodeID)
 			return HandleLeechRequest(newRPCMsgHeader, msg, payload, conn, n.FILE_LOCATION)
 		}
 

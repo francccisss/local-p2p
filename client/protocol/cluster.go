@@ -48,9 +48,8 @@ func CreateClusterTable() *ClusterTable {
 }
 
 func CreateCluster(cname ClusterName, fileHash FileHash) *Cluster {
-	cpt := make(map[NodeID]*ClusterPeerThread)
 	newCluster := Cluster{
-		ClusterPeerThreads: cpt,
+		ClusterPeerThreads: make(map[NodeID]*ClusterPeerThread),
 		ClusterPeers:       []ClusterPeer{},
 		CurrentNode:        Peer{Status: IDLE, ClusterName: cname},
 		ClusterName:        cname,
@@ -78,7 +77,6 @@ func (cl *Cluster) AppendClusterPeer(cpeer ClusterPeer) error {
 		}
 		return fmt.Errorf("%s - Already exists\n", cpeer.NodeID)
 	}
-
 	cl.ClusterPeers = append(cl.ClusterPeers, cpeer)
 	return nil
 }

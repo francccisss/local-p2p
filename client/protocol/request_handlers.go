@@ -77,9 +77,9 @@ func HandleLeechRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, payload 
 		fmt.Println("Unable to unmarshal data segment")
 		return err
 	}
+	fmt.Println(FILE_LOCATION)
 	en, path, err := Checkfile(fr.Hash, FILE_LOCATION)
 	if err != nil {
-		fmt.Println("Unable to unmarshal data segment")
 		newRPCMsgHeader.Message = err.Error()
 		newRPCMsgHeader.StatusCode = ERROR
 		buff, err := WrapPayloadToBuffer(newRPCMsgHeader, nil)
