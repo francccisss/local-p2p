@@ -42,7 +42,7 @@ type PieceHeader struct {
 	ClusterName ClusterName // string ID of the file to be sent
 }
 
-// HashLen, Hash(variable sized), Piece Pos, PieceOffset, total Pieces
+// HashLen, Hash(64 long characters), Piece Pos, PieceOffset, total Pieces
 func ParsePieceHeader(header []byte) (pieceHeader PieceHeader, HeaderLength int, Error error) {
 
 	type Header struct {
@@ -51,15 +51,15 @@ func ParsePieceHeader(header []byte) (pieceHeader PieceHeader, HeaderLength int,
 		TotalPieces int64 // size in bytes / block
 	}
 
-	fmt.Printf("Length of header: %d\n", len(header))
+	fmt.Printf("[ PIECE CREATION ]: Length of header: %d\n", len(header))
 	hashLen := binary.LittleEndian.Uint32(header[:4])
-	fmt.Printf("HASH LEN: %d\n", hashLen)
+	fmt.Printf("[ PIECE CREATION ]: HASH LEN - %d\n", hashLen)
 
-	fmt.Printf("Hash %s\n", string(header[4:4+hashLen]))
+	fmt.Printf("[ PIECE CREATION ]: Hash %s\n", string(header[4:4+hashLen]))
 
 	var h Header
 	hreader := bytes.NewReader(header[4+hashLen:]) // dont include string ClusterName
-	fmt.Printf("header len remaining: %d\n", hreader.Len())
+	fmt.Printf("[ PIECE CREATION ]: header len remaining: %d\n", hreader.Len())
 
 	err := binary.Read(hreader, binary.LittleEndian, &h)
 
@@ -77,10 +77,10 @@ func ParsePieceHeader(header []byte) (pieceHeader PieceHeader, HeaderLength int,
 
 // Returns a buffer that contains a PieceHeader + DataPiece Buffer to be read by the
 // node that requested to leech to the node that called this function.
-func CreateDataPiece(path string, dataInfo *FileRequest) (DataPiece *bytes.Buffer, HeaderLength int, Error error) {
+func CreateDataPiece(path string, fileReq *FileRequest) (DataPiece *bytes.Buffer, HeaderLength int, Error error) {
 
-	fmt.Printf("Creating Pieces for %s\n", dataInfo.Hash)
-	buf, err := ReadFileBuf(path, dataInfo)
+	fmt.Printf("[ PIECE CREATION ]: Creating Pieces for %s\n", fileReq.Hash)
+	fileBuf, err := ReadFileBuf(path, fileReq)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -88,63 +88,63 @@ func CreateDataPiece(path string, dataInfo *FileRequest) (DataPiece *bytes.Buffe
 	// TODO: very scuffed way to create the header and buffer for the piece, should be refactored in the future
 	DataPieceBuffer := new(bytes.Buffer)
 
-	hashLen := len(dataInfo.Hash)
-	DataPieceBuffer.Grow(hashLen + 28 + len(buf))
+	hashLen := len(fileReq.Hash)
+	DataPieceBuffer.Grow(hashLen + 28 + len(fileBuf))
 
 	hashLenBuf := make([]byte, 4)
 	binary.LittleEndian.PutUint32(hashLenBuf, uint32(hashLen))
 
-	// 4 bytes hash
+	// 4 bytes hash || 64 characters
 	binary.Write(DataPieceBuffer, binary.LittleEndian, uint32(hashLen))
-	DataPieceBuffer.Write([]byte(dataInfo.Hash))
-	fmt.Printf("BUF INT VAL: %d, HASH LEN in Bytes: B>%d, String %s\n", hashLen, hashLenBuf, DataPieceBuffer.Bytes()[:hashLen])
+	DataPieceBuffer.Write([]byte(fileReq.Hash))
+	fmt.Printf("[ PIECE CREATION ]: BUF INT VAL - %d, HASH LEN in Bytes: B>%d, Hash: '%s'\n", hashLen, hashLenBuf, DataPieceBuffer.Bytes()[:hashLen])
 
 	// 8 bytes Piece Size
-	binary.Write(DataPieceBuffer, binary.LittleEndian, uint64(len(buf)))
-	fmt.Printf("BUF INT VAL: %d, Data Info Piece Size: %d\n", len(buf), binary.LittleEndian.Uint64(DataPieceBuffer.Bytes()[hashLen+4:]))
+	binary.Write(DataPieceBuffer, binary.LittleEndian, uint64(len(fileBuf)))
+	fmt.Printf("[ PIECE CREATION ]: BUF INT VAL - %d, Data Info Piece Size: %d\n", len(fileBuf), binary.LittleEndian.Uint64(DataPieceBuffer.Bytes()[hashLen+4:]))
 
 	// 8 bytes Offset
-	binary.Write(DataPieceBuffer, binary.LittleEndian, uint64(dataInfo.Offset/dataInfo.BlockSize)) // get current Piece
-	fmt.Printf("BUF INT VAL: %d, Data Info Offset: %d\n", dataInfo.Offset, binary.LittleEndian.Uint64(DataPieceBuffer.Bytes()[hashLen+12:]))
+	binary.Write(DataPieceBuffer, binary.LittleEndian, uint64(fileReq.Offset/fileReq.BlockSize)) // get current Piece
+	fmt.Printf("[ PIECE CREATION ]: BUF INT VAL - %d, Data Info Offset: %d\n", fileReq.Offset, binary.LittleEndian.Uint64(DataPieceBuffer.Bytes()[hashLen+12:]))
 
 	// 8 bytes TotalPieces
-	binary.Write(DataPieceBuffer, binary.LittleEndian, dataInfo.Pieces)
-	fmt.Printf("BUF INT VAL: %d, Data Info Total Pieces: %d\n", dataInfo.Size, binary.LittleEndian.Uint64(DataPieceBuffer.Bytes()[hashLen+12+8:]))
+	binary.Write(DataPieceBuffer, binary.LittleEndian, fileReq.Pieces)
+	fmt.Printf("[ PIECE CREATION ]: BUF INT VAL - %d, Data Info Total Pieces: %d\n", fileReq.Size, binary.LittleEndian.Uint64(DataPieceBuffer.Bytes()[hashLen+12+8:]))
 
 	// IMPORTANT: this reads the total len BEFORE appending the data from reading the file
 	// since all pre previous operations were mainly for constructing the header
 	// of the current piece.
 	headerSize := DataPieceBuffer.Len()
-	DataPieceBuffer.Write(buf)
+	DataPieceBuffer.Write(fileBuf)
 
 	return DataPieceBuffer, headerSize, nil
 }
 
-func ReadFileBuf(path string, dataInfo *FileRequest) ([]byte, error) {
+func ReadFileBuf(path string, fileReq *FileRequest) ([]byte, error) {
 
 	fd, err := syscall.Open(path, syscall.O_RDONLY, 0644)
 	if err != nil {
 		return nil, err
 	}
 
-	buf, err := syscall.Mmap(fd, dataInfo.Offset, int(dataInfo.BlockSize), syscall.PROT_READ, syscall.MAP_SHARED)
+	buf, err := syscall.Mmap(fd, fileReq.Offset, int(fileReq.BlockSize), syscall.PROT_READ, syscall.MAP_SHARED)
 
 	if err != nil {
-		fmt.Println("Error accessing memory mapped disk")
+		fmt.Println("[ PIECE CREATION ]: Error accessing memory mapped disk")
 		return nil, err
 	}
 	// if the remaining bytes is less than the block size, then only read the remaining bytes
-	rem := min(dataInfo.BlockSize, dataInfo.Size-dataInfo.Offset)
+	rem := min(fileReq.BlockSize, fileReq.Size-fileReq.Offset)
 	tmp := make([]byte, rem)
 	copy(tmp, buf[:rem])
 
 	err = syscall.Munmap(buf)
 	if err != nil {
-		fmt.Println("Error accessing memory mapped disk")
+		fmt.Println("[ PIECE CREATION ]: Error accessing memory mapped disk")
 		return nil, err
 	}
 
-	dataInfo.Offset += int64(dataInfo.BlockSize)
+	fileReq.Offset += int64(fileReq.BlockSize)
 	return tmp, nil
 }
 
@@ -294,13 +294,15 @@ func recursiveFileSearch(fileHash FileHash, entries []os.DirEntry, wd *[]string)
 			fmt.Printf("Reason: %s\n", err)
 			continue
 		}
+		// back tracks the stack to continue to the next file if the current directory
+		// exhausted all the entries it has and moves on to the adjacent entry
 		foundEntry, err := recursiveFileSearch(fileHash, curDirEntries, wd)
 		if err != nil {
 			*wd = (*wd)[:len(*wd)-1]
 			continue
 		}
 
-		fmt.Printf("Found File: %s\n", entryName)
+		fmt.Printf("[ File Search ]: Found File: %s\n", entryName)
 		return foundEntry, nil
 	}
 	return nil, fmt.Errorf("No entries matching the fileKey.")

@@ -33,7 +33,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsgHeader, payload Payload, conn io.ReadWri
 	case CALL: // when peers/nodes send a call RPCType
 
 		var newRPCMsgHeader RPCMsgHeader
-		fmt.Println("Call Message")
+		fmt.Println("[ RPC MESSAGE ]: Call Message")
 
 		newRPCMsgHeader = RPCMsgHeader{
 			Method:      msg.Method,
@@ -90,7 +90,6 @@ func (n *Node) RecvRPCMessage(msg RPCMsgHeader, payload Payload, conn io.ReadWri
 
 			err = SendViaExistingConn(b, conn)
 			if err != nil {
-				fmt.Println("Unable to respond to ping")
 				return ProtocolErrorWrap(err.Error(), CALL, FIND_CLUSTER)
 			}
 		case JOIN:
@@ -107,7 +106,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsgHeader, payload Payload, conn io.ReadWri
 		case PROBE:
 			b, err := HandleProbeRequest(newRPCMsgHeader, msg, payload, n.FILE_LOCATION)
 			if err != nil {
-				fmt.Printf("[PROBE REQUEST]: %s\n", err)
+				fmt.Printf("[ PROBE REQUEST ]: %s\n", err)
 				newRPCMsgHeader.Message = err.Error()
 				newRPCMsgHeader.StatusCode = ERROR
 				b, err := WrapPayloadToBuffer(newRPCMsgHeader, nil)
@@ -144,17 +143,17 @@ func (n *Node) RecvRPCMessage(msg RPCMsgHeader, payload Payload, conn io.ReadWri
 
 		case PING_NODE:
 			pingResponse := HandlePingNodeResponse(msg, payload)
-			fmt.Printf("Retrived Ping reponse %+v", pingResponse)
+			fmt.Printf("[ PING ]: Retrived Ping reponse %+v", pingResponse)
 			conn.Close()
 		case PING_CLUSTER:
 			pingResponse := HandlePingClusterResponse(msg, payload)
-			fmt.Printf("Retrived Ping reponse %+v", pingResponse)
+			fmt.Printf("[ PING ]: Retrived Ping reponse %+v", pingResponse)
 		case FIND_CLUSTER:
 			cr, err := HandleFindClusterResponse(msg, payload, clt)
 			if err != nil {
 				return ProtocolErrorWrap(err.Error(), REPLY, FIND_CLUSTER)
 			}
-			fmt.Printf("[REPLY]: FIND CLUSTER - %d new peers added to %s cluster\n", len(cr.Peers), cr.ClusterName)
+			fmt.Printf("[ REPLY ]: FIND CLUSTER - %d new peers added to %s cluster\n", len(cr.Peers), cr.ClusterName)
 		case JOIN:
 			fmt.Println("HANDLING")
 			err := HandleJoinClusterResponse(msg, payload, conn, clt)
@@ -453,12 +452,12 @@ func WrapPayloadToBuffer(msg RPCMsgHeader, payload []byte) ([]byte, error) {
 	// where header append?
 	buf := make([]byte, PREFIX_HEADER_SIZE, len(b)+PREFIX_HEADER_SIZE)
 
-	fmt.Printf("HEADER SIZE: %d\n", PREFIX_HEADER_SIZE)
+	fmt.Printf("[ PAYLOAD WRAPPER ] HEADER SIZE: %d\n", PREFIX_HEADER_SIZE)
 	// creates a header for th json metadata
 	binary.LittleEndian.PutUint32(buf, uint32(len(b)))
-	fmt.Printf("META JSON SIZE: %d\n", len(b))
+	fmt.Printf("[ PAYLOAD WRAPPER ]: META JSON SIZE: %d\n", len(b))
 
-	fmt.Printf("PAYLOAD SIZE: %d\n", len(payload))
+	fmt.Printf("[ PAYLOAD WRAPPER ]: PAYLOAD SIZE: %d\n", len(payload))
 
 	// appends marshaled json after getting len of the msg header
 	buf = append(buf, b...)
@@ -466,7 +465,7 @@ func WrapPayloadToBuffer(msg RPCMsgHeader, payload []byte) ([]byte, error) {
 		// appends the payload
 		buf = append(buf, payload...)
 	}
-	fmt.Printf("Total Message Size: %d\n", len(buf))
+	fmt.Printf("[ PAYLOAD WRAPPER ]: Total Message Size: %d\n", len(buf))
 
 	return buf, nil
 }
@@ -477,7 +476,7 @@ func SendViaExistingConn(message []byte, conn io.ReadWriteCloser) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Marshalled Size: %d-bytes including payload, Prefix Header Size: %d-bytes, Total Size: %d-bytes\n", len(message[PREFIX_HEADER_SIZE:]), PREFIX_HEADER_SIZE, len(message))
+	fmt.Printf("[ SENDING ]: Marshalled Size: %d-bytes including payload, Prefix Header Size: %d-bytes, Total Size: %d-bytes\n", len(message[PREFIX_HEADER_SIZE:]), PREFIX_HEADER_SIZE, len(message))
 	return nil
 
 }
@@ -500,7 +499,7 @@ func SendMsg(message []byte, peerAddr NodeAddr) error {
 		return err
 	}
 
-	fmt.Printf("Marshalled Size: %d including payload, Prefix Header Size: %d\nTotal Size: %d\n", len(message[PREFIX_HEADER_SIZE:]), PREFIX_HEADER_SIZE, len(message))
+	fmt.Printf("[ SENDING ]: Marshalled Size: %d including payload, Prefix Header Size: %d\nTotal Size: %d\n", len(message[PREFIX_HEADER_SIZE:]), PREFIX_HEADER_SIZE, len(message))
 
 	return nil
 }

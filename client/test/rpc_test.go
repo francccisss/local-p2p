@@ -16,13 +16,13 @@ type dummyCommChannel struct {
 func (clb *dummyCommChannel) Read(p []byte) (n int, err error) {
 	// it reads all of clb.buf into rb
 	rb := <-clb.buf
-	fmt.Printf("READ FROM BUF TO P %d\n", len(rb))
+	fmt.Printf("[ TEST ]: READ FROM BUF TO P %d\n", len(rb))
 	readBytes := copy(p, rb[:clb.n])
 	return readBytes, nil
 }
 
 func (clb *dummyCommChannel) Write(p []byte) (n int, err error) {
-	fmt.Printf("WROTE TO BUFF %d\n", len(p))
+	fmt.Printf("[ TEST ]: WROTE TO BUFF %d\n", len(p))
 	clb.buf <- p
 	clb.n = len(p)
 	return len(p), nil
@@ -55,7 +55,7 @@ func TestClusterSearch(t *testing.T) {
 
 	var mr connection.MessageReader = connection.MessageReader{
 		PayloadBuffer: make([]byte, 0, 4096),
-		JsonBuffer:    make([]byte, 0, 4096),
+		JSONBuffer:    make([]byte, 0, 4096),
 		State:         connection.PROCESSING,
 	}
 
@@ -117,7 +117,7 @@ func TestJoinCluster(t *testing.T) {
 
 	var mr connection.MessageReader = connection.MessageReader{
 		PayloadBuffer: make([]byte, 0, 4096),
-		JsonBuffer:    make([]byte, 0, 4096),
+		JSONBuffer:    make([]byte, 0, 4096),
 		State:         connection.PROCESSING,
 	}
 
@@ -176,7 +176,7 @@ func TestProbeFile(t *testing.T) {
 
 	var mr connection.MessageReader = connection.MessageReader{
 		PayloadBuffer: make([]byte, 0, 4096),
-		JsonBuffer:    make([]byte, 0, 4096),
+		JSONBuffer:    make([]byte, 0, 4096),
 		State:         connection.PROCESSING,
 	}
 
@@ -253,7 +253,7 @@ func ConsumerNodeReaderWriterToChannel(n protocol.Node, dchl *dummyCommChannel, 
 
 	var mr connection.MessageReader = connection.MessageReader{
 		PayloadBuffer: make([]byte, 0, 4096),
-		JsonBuffer:    make([]byte, 0, 4096),
+		JSONBuffer:    make([]byte, 0, 4096),
 		State:         connection.PROCESSING,
 	}
 
