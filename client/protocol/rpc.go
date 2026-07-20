@@ -384,7 +384,7 @@ func (n *Node) Leech(cname ClusterName, fr FileRequest, clt *ClusterTable, isCon
 		return fmt.Errorf("There are no peers to leech from")
 	}
 	fmt.Printf("[LEECH REQUEST]: number of peers in '%s' cluster: %d\n", cname, len(c.ClusterPeers))
-	c.CurrentNode.Status = LEECHING
+	c.Node.Status = LEECHING
 
 	fmt.Printf("[LEECH REQUEST]: Sending request to peers in cluster: %s\n", cname)
 	mds, err := json.Marshal(fr)

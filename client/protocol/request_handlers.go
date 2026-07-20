@@ -126,7 +126,7 @@ func HandleJoinClusterRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, pa
 
 	joinResponse := JoinResponse{
 		NodeID:      newRPCMsgHeader.NodeID,
-		Status:      cl.CurrentNode.Status,
+		Status:      cl.Node.Status,
 		ClusterName: cl.ClusterName,
 	}
 	b, err := json.Marshal(joinResponse)

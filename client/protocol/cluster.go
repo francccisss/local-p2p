@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"client/utils/bitfield"
 	"fmt"
 	"io"
 )
@@ -9,22 +10,24 @@ type ClusterName string
 
 // calling Join() sets the TCP connection for the peers in the cluster
 type ClusterPeer struct {
-	Addr   NodeAddr
-	NodeID NodeID
-	Conn   io.ReadWriteCloser
-	Status PeerStatus
+	Addr         NodeAddr
+	NodeID       NodeID
+	Conn         io.ReadWriteCloser
+	Status       PeerStatus
+	PeerBitField bitfield.BitField
 }
 
 type Cluster struct {
 	ClusterName  ClusterName
 	FileHash     string
 	ClusterPeers []ClusterPeer
-	CurrentNode  Peer // created when a cluster is created
+	Node         CurrentNode // Represents the CurrentNode in this process
 }
 
-type Peer struct {
+type CurrentNode struct {
 	Status      PeerStatus
 	ClusterName ClusterName
+	BitField    bitfield.BitField
 }
 
 type ClusterTable map[ClusterName]*Cluster
@@ -38,7 +41,7 @@ func CreateClusterTable() *ClusterTable {
 func CreateCluster(cname ClusterName, fileHash FileHash) *Cluster {
 	newCluster := Cluster{
 		ClusterPeers: []ClusterPeer{},
-		CurrentNode:  Peer{Status: IDLE, ClusterName: cname},
+		Node:         CurrentNode{Status: IDLE, ClusterName: cname},
 		ClusterName:  cname,
 		FileHash:     fileHash,
 	}
