@@ -1,14 +1,12 @@
 package protocol
 
 import (
-	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"sync"
-	"time"
 )
 
 // buffer is the payload received from a peer
@@ -375,7 +373,7 @@ func (n *Node) JoinCluster(cname ClusterName, clt *ClusterTable) error {
 	return nil
 }
 
-func (n *Node) Leech(cname ClusterName, spawnThreads bool, fr FileRequest, clt *ClusterTable, isConnectionExist bool) error {
+func (n *Node) Leech(cname ClusterName, fr FileRequest, clt *ClusterTable, isConnectionExist bool) error {
 
 	c, ok := (*clt)[cname]
 	if !ok {
@@ -388,21 +386,6 @@ func (n *Node) Leech(cname ClusterName, spawnThreads bool, fr FileRequest, clt *
 	fmt.Printf("[LEECH REQUEST]: number of peers in '%s' cluster: %d\n", cname, len(c.ClusterPeers))
 	c.CurrentNode.Status = LEECHING
 
-	if spawnThreads {
-		var wg sync.WaitGroup
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
-		fmt.Println("[LEECH REQUEST]: Preparing Cluster Peer Threads for Byte Measurement")
-		defer cancel()
-
-		for _, p := range c.ClusterPeers {
-			wg.Go(func() {
-				go c.SpawnPeerThreads(&ctx, c.ClusterPeerThreads[p.NodeID])
-			})
-		}
-		fmt.Println("[LEECH REQUEST]: Waiting for Cluster Peer Threads to deploy...")
-		wg.Wait()
-		fmt.Println("[LEECH REQUEST]: Done!")
-	}
 	fmt.Printf("[LEECH REQUEST]: Sending request to peers in cluster: %s\n", cname)
 	mds, err := json.Marshal(fr)
 	if err != nil {

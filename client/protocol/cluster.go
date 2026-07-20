@@ -1,22 +1,11 @@
 package protocol
 
 import (
-	"context"
 	"fmt"
 	"io"
-	"math"
-	"time"
 )
 
 type ClusterName string
-
-type ClusterPeerThread struct {
-	TimeSince     time.Time
-	NodeIDChann   chan NodeID
-	ClusterName   ClusterName
-	AverageBytes  int
-	BytesReceived int
-}
 
 // calling Join() sets the TCP connection for the peers in the cluster
 type ClusterPeer struct {
@@ -27,11 +16,10 @@ type ClusterPeer struct {
 }
 
 type Cluster struct {
-	ClusterPeerThreads map[NodeID]*ClusterPeerThread // keep track of peers
-	ClusterName        ClusterName
-	FileHash           string
-	ClusterPeers       []ClusterPeer
-	CurrentNode        Peer // created when a cluster is created
+	ClusterName  ClusterName
+	FileHash     string
+	ClusterPeers []ClusterPeer
+	CurrentNode  Peer // created when a cluster is created
 }
 
 type Peer struct {
@@ -49,11 +37,10 @@ func CreateClusterTable() *ClusterTable {
 
 func CreateCluster(cname ClusterName, fileHash FileHash) *Cluster {
 	newCluster := Cluster{
-		ClusterPeerThreads: make(map[NodeID]*ClusterPeerThread),
-		ClusterPeers:       []ClusterPeer{},
-		CurrentNode:        Peer{Status: IDLE, ClusterName: cname},
-		ClusterName:        cname,
-		FileHash:           fileHash,
+		ClusterPeers: []ClusterPeer{},
+		CurrentNode:  Peer{Status: IDLE, ClusterName: cname},
+		ClusterName:  cname,
+		FileHash:     fileHash,
 	}
 
 	return &newCluster
@@ -79,47 +66,4 @@ func (cl *Cluster) AppendClusterPeer(cpeer ClusterPeer) error {
 	}
 	cl.ClusterPeers = append(cl.ClusterPeers, cpeer)
 	return nil
-}
-
-func (cl *Cluster) NewClusterPeerThread(nodeID NodeID) *ClusterPeerThread {
-	newClusterPeerThread := &ClusterPeerThread{
-		ClusterName: cl.ClusterName,
-		NodeIDChann: make(chan NodeID),
-		TimeSince:   time.Now(),
-	}
-	cl.ClusterPeerThreads[nodeID] = newClusterPeerThread
-	return newClusterPeerThread
-}
-
-// will be received every reply to LEECH is received
-// Use ctx to cancel when leeching is done
-func (cl *Cluster) SpawnPeerThreads(ctx *context.Context, cpt *ClusterPeerThread) {
-	// handle nil of cpt
-	// if cpt == nil {
-	// 	return fmt.Errorf("Peer Thread is nil")
-	// }
-
-	for {
-		select {
-		case <-(*ctx).Done():
-			fmt.Println("TIMED OUT")
-			fmt.Println("Cleaning Thread")
-			return
-			// clean up thread ORR ELSEEE!!!
-		case nodeID := <-(*cpt).NodeIDChann:
-			{
-				fmt.Printf("Transfer by: %s\n", nodeID)
-
-				currentTime := time.Now()
-				elapsedms := currentTime.Sub(cpt.TimeSince)
-				cpt.AverageBytes = cpt.BytesReceived / int(math.Max(1, float64(elapsedms.Seconds())))
-
-				fmt.Printf("Time Elapsed: %fs\n", elapsedms.Seconds())
-				fmt.Printf("Bytes Received: %d\n", cpt.BytesReceived)
-				fmt.Printf("Average Bytes: %d\n", cpt.AverageBytes)
-			}
-
-		}
-	}
-
 }
