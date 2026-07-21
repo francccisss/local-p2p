@@ -12,6 +12,7 @@ const (
 	JOIN
 	PROBE
 	LEECH
+	HAVE
 )
 
 var MethodStringMap = map[Method]MethodString{
@@ -21,6 +22,7 @@ var MethodStringMap = map[Method]MethodString{
 	3: "JOIN",
 	4: "PROBE",
 	5: "LEECH",
+	6: "HAVE",
 }
 
 const PREFIX_HEADER_SIZE = 4

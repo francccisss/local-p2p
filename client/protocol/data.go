@@ -28,7 +28,7 @@ type FileMetaData struct {
 // used for RPC Message by requester
 type FileRequest struct {
 	Pieces    int64
-	Hash      string // should be 16bit string
+	Hash      string
 	Size      int64
 	Offset    int64
 	BlockSize int64

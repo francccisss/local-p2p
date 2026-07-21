@@ -46,6 +46,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsgHeader, payload Payload, conn io.ReadWri
 		// setting requesting node's port to host byte ordering
 		binary.LittleEndian.PutUint32(newRPCMsgHeader.Port, uint32(n.Addr.Port))
 		switch msg.Method {
+		case HAVE:
 
 		case PING_NODE:
 			requstNodePort := binary.LittleEndian.Uint32(msg.Port)
@@ -131,13 +132,15 @@ func (n *Node) RecvRPCMessage(msg RPCMsgHeader, payload Payload, conn io.ReadWri
 			return HandleLeechRequest(newRPCMsgHeader, msg, payload, conn, n.FILE_LOCATION)
 		}
 
-	case REPLY: // when peers/nodes send a call RPCType
+	case REPLY: // when peers/nodes send a reaply RPCType
 
 		if msg.StatusCode == ERROR {
 			return ProtocolErrorWrap(msg.Message, REPLY, msg.Method)
 		}
 
 		switch msg.Method {
+
+		case HAVE:
 
 		case PING_NODE:
 			pingResponse := HandlePingNodeResponse(msg, payload)
@@ -160,6 +163,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsgHeader, payload Payload, conn io.ReadWri
 			}
 
 		case LEECH:
+			// sends HAVE afterwards
 			return HandleLeechResponse(msg, payload, conn)
 
 		case PROBE:

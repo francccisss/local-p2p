@@ -223,7 +223,7 @@ func TestDataDelivery(t *testing.T) {
 
 	}
 
-	requestingNode.Leech(clusterName, false, protocol.FileRequest{
+	requestingNode.Leech(clusterName, protocol.FileRequest{
 		Hash:      metaData.Hash,
 		Size:      int64(metaData.Size),
 		Offset:    0,
