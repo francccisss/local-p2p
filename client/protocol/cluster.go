@@ -22,6 +22,8 @@ type Cluster struct {
 	FileHash     string
 	ClusterPeers []ClusterPeer
 	Node         CurrentNode // Represents the CurrentNode in this process
+	// DHT already provides all that information
+	FileMetaData FileMetaData // no need to send File Request == to File Meta Data
 }
 
 type CurrentNode struct {

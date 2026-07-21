@@ -1,5 +1,6 @@
 package protocol
 
+// 64 Byte size from sha256
 type FileHash = string
 
 type Method uint32

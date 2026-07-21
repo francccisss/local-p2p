@@ -71,39 +71,39 @@ func HandleLeechRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, payload 
 
 	// a call to leech received a single SegmentHeader
 	// a reply to leech receives an array of SegmentHeaders
-	var fr FileRequest
-	err := json.Unmarshal(payload, &fr)
-	if err != nil {
-		fmt.Println("Unable to unmarshal data segment")
-		return err
-	}
-	fmt.Println(FILE_LOCATION)
-	en, path, err := Checkfile(fr.Hash, FILE_LOCATION)
-	if err != nil {
-		newRPCMsgHeader.Message = err.Error()
-		newRPCMsgHeader.StatusCode = ERROR
-		buff, err := WrapPayloadToBuffer(newRPCMsgHeader, nil)
-		if err != nil {
-			fmt.Println("[ERROR]: Unable to send message")
-		}
-		msgErr := SendViaExistingConn(buff, conn)
-		if msgErr != nil {
-			fmt.Println("[ERROR]: Unable to send message")
-		}
-		return err
-	}
-	buf, _, err := CreateDataPiece(path+en.Name(), &fr)
-	if err != nil {
-		return err
-	}
-	b, err := WrapPayloadToBuffer(newRPCMsgHeader, buf.Bytes())
-	if err != nil {
-		return err
-	}
-	err = SendViaExistingConn(b, conn)
-	if err != nil {
-		return err
-	}
+	// var fr FileRequest
+	// err := json.Unmarshal(payload, &fr)
+	// if err != nil {
+	// 	fmt.Println("Unable to unmarshal data segment")
+	// 	return err
+	// }
+	// fmt.Println(FILE_LOCATION)
+	// en, path, err := Checkfile(fr.Hash, FILE_LOCATION)
+	// if err != nil {
+	// 	newRPCMsgHeader.Message = err.Error()
+	// 	newRPCMsgHeader.StatusCode = ERROR
+	// 	buff, err := WrapPayloadToBuffer(newRPCMsgHeader, nil)
+	// 	if err != nil {
+	// 		fmt.Println("[ERROR]: Unable to send message")
+	// 	}
+	// 	msgErr := SendViaExistingConn(buff, conn)
+	// 	if msgErr != nil {
+	// 		fmt.Println("[ERROR]: Unable to send message")
+	// 	}
+	// 	return err
+	// }
+	// buf, _, err := CreateDataPiece(path+en.Name(), &fr)
+	// if err != nil {
+	// 	return err
+	// }
+	// b, err := WrapPayloadToBuffer(newRPCMsgHeader, buf.Bytes())
+	// if err != nil {
+	// 	return err
+	// }
+	// err = SendViaExistingConn(b, conn)
+	// if err != nil {
+	// 	return err
+	// }
 	return nil
 }
 
@@ -188,5 +188,5 @@ func ProbeFile(FILE_LOCATION string, fileHash FileHash) (FileMetaData, error) {
 	fmt.Printf("file length: %d\n", len(fileBuffer))
 
 	// check data integrity of file using checksum
-	return FileMetaData{Name: file.Name(), Hash: fileHash, Size: uint64(file.Size())}, nil
+	return FileMetaData{Name: file.Name(), Hash: fileHash, BufSize: uint64(file.Size())}, nil
 }
