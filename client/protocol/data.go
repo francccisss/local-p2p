@@ -73,11 +73,7 @@ func CreateDataPiece(path string, fr FileRequest) (DataPiece *[]byte, Error erro
 
 	pieceSizeBuf := make([]byte, 8)
 
-	n := binary.PutUvarint(pieceSizeBuf, uint64(len(fileBuf)))
-
-	if n < 1 {
-		return nil, fmt.Errorf("unable to write piece size to buffer")
-	}
+	binary.LittleEndian.PutUint64(pieceSizeBuf, uint64(len(fileBuf)))
 
 	fmt.Printf("String Hash: %s, Buf: %s\n", fr.Hash, []byte(fr.Hash))
 	fmt.Printf("Payload Size: %d\n", pieceSizeBuf)
