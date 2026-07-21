@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -20,121 +21,88 @@ import (
 type FileMetaData struct {
 	Name      string
 	Hash      string
-	Size      uint64
+	BufSize   uint64
 	BlockSize int64
 	Pieces    uint64
 }
 
+const PIECE_SIZE = (256 * 1024)
+const PIECE_HEADER_SIZE = 8 + 64
+
 // used for RPC Message by requester
 type FileRequest struct {
-	Pieces    int64
-	Hash      string
-	Size      int64
-	Offset    int64
-	BlockSize int64
+	Hash     string
+	Interest int64
 }
 
 // used for RPC Message by receiver to reply to the iniator
 type PieceHeader struct {
-	PieceSize   int64       // from blockSize or remaining bytes
-	Offset      int64       // current bytes created / block
-	TotalPieces int64       // size in bytes / block
-	ClusterName ClusterName // string ID of the file to be sent
+	FileHash  FileHash
+	PieceSize uint64 // from blockSize or remaining bytes
 }
 
-// HashLen, Hash(64 long characters), Piece Pos, PieceOffset, total Pieces
-func ParsePieceHeader(header []byte) (pieceHeader PieceHeader, HeaderLength int, Error error) {
-
-	type Header struct {
-		PieceSize   int64 // from blockSize or remaining bytes
-		Offset      int64 // current bytes created / block
-		TotalPieces int64 // size in bytes / block
-	}
-
-	fmt.Printf("[ PIECE CREATION ]: Length of header: %d\n", len(header))
-	hashLen := binary.LittleEndian.Uint32(header[:4])
-	fmt.Printf("[ PIECE CREATION ]: HASH LEN - %d\n", hashLen)
-
-	fmt.Printf("[ PIECE CREATION ]: Hash %s\n", string(header[4:4+hashLen]))
-
-	var h Header
-	hreader := bytes.NewReader(header[4+hashLen:]) // dont include string ClusterName
-	fmt.Printf("[ PIECE CREATION ]: header len remaining: %d\n", hreader.Len())
-
-	err := binary.Read(hreader, binary.LittleEndian, &h)
-
+// Hash(64 long characters) & PieceSize 8 bytes
+func ParsePieceHeader(buf *[]byte) (Header PieceHeader, Error error) {
+	ph := PieceHeader{}
+	err := json.Unmarshal(*buf, &ph)
 	if err != nil {
-		return PieceHeader{}, 0, err
+		fmt.Println("Unable to Unmarshal Piece Header")
+		return PieceHeader{}, err
 	}
-
-	return PieceHeader{
-		PieceSize:   h.PieceSize,
-		Offset:      h.Offset,
-		TotalPieces: h.TotalPieces,
-		ClusterName: ClusterName(header[4 : 4+hashLen]),
-	}, len(header), nil
+	return ph, nil
 }
 
-// Returns a buffer that contains a PieceHeader + DataPiece Buffer to be read by the
-// node that requested to leech to the node that called this function.
-func CreateDataPiece(path string, fileReq *FileRequest) (DataPiece *bytes.Buffer, HeaderLength int, Error error) {
+// ClusterName is var length (runtime)
+// Hash is FILE_HASH_SIZE 64 bytes
+// Size is 8 bytes
+// Payload is fixed 256KB
+// Piece Header -> [Hash, PayloadSize] -> [PayLoad]
+func CreateDataPiece(path string, fr FileRequest) (DataPiece *bytes.Buffer, Error error) {
 
-	fmt.Printf("[ PIECE CREATION ]: Creating Pieces for %s\n", fileReq.Hash)
-	fileBuf, err := ReadFileBuf(path, fileReq)
+	fmt.Printf("[ PIECE CREATION ]: Creating Pieces for %s\n", fr.Hash)
+	fileBuf, err := ReadFileBuf(path, fr)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	// TODO: very scuffed way to create the header and buffer for the piece, should be refactored in the future
 	DataPieceBuffer := new(bytes.Buffer)
 
-	hashLen := len(fileReq.Hash)
-	DataPieceBuffer.Grow(hashLen + 28 + len(fileBuf))
+	DataPieceBuffer.Grow(FILE_HASH_SIZE + PIECE_SIZE)
+	pieceSizeBuf := make([]byte, 8)
+	n := binary.PutUvarint(pieceSizeBuf, PIECE_SIZE)
+	if n < 1 {
+		return nil, fmt.Errorf("unable to write piece size to buffer")
+	}
 
-	hashLenBuf := make([]byte, 4)
-	binary.LittleEndian.PutUint32(hashLenBuf, uint32(hashLen))
+	DataPieceBuffer.Write([]byte(fr.Hash))
 
-	// 4 bytes hash || 64 characters
-	binary.Write(DataPieceBuffer, binary.LittleEndian, uint32(hashLen))
-	DataPieceBuffer.Write([]byte(fileReq.Hash))
-	fmt.Printf("[ PIECE CREATION ]: BUF INT VAL - %d, HASH LEN in Bytes: B>%d, Hash: '%s'\n", hashLen, hashLenBuf, DataPieceBuffer.Bytes()[:hashLen])
+	DataPieceBuffer.Write(pieceSizeBuf[:n])
 
-	// 8 bytes Piece Size
-	binary.Write(DataPieceBuffer, binary.LittleEndian, uint64(len(fileBuf)))
-	fmt.Printf("[ PIECE CREATION ]: BUF INT VAL - %d, Data Info Piece Size: %d\n", len(fileBuf), binary.LittleEndian.Uint64(DataPieceBuffer.Bytes()[hashLen+4:]))
-
-	// 8 bytes Offset
-	binary.Write(DataPieceBuffer, binary.LittleEndian, uint64(fileReq.Offset/fileReq.BlockSize)) // get current Piece
-	fmt.Printf("[ PIECE CREATION ]: BUF INT VAL - %d, Data Info Offset: %d\n", fileReq.Offset, binary.LittleEndian.Uint64(DataPieceBuffer.Bytes()[hashLen+12:]))
-
-	// 8 bytes TotalPieces
-	binary.Write(DataPieceBuffer, binary.LittleEndian, fileReq.Pieces)
-	fmt.Printf("[ PIECE CREATION ]: BUF INT VAL - %d, Data Info Total Pieces: %d\n", fileReq.Size, binary.LittleEndian.Uint64(DataPieceBuffer.Bytes()[hashLen+12+8:]))
-
-	// IMPORTANT: this reads the total len BEFORE appending the data from reading the file
-	// since all pre previous operations were mainly for constructing the header
-	// of the current piece.
-	headerSize := DataPieceBuffer.Len()
 	DataPieceBuffer.Write(fileBuf)
 
-	return DataPieceBuffer, headerSize, nil
+	return DataPieceBuffer, nil
 }
 
-func ReadFileBuf(path string, fileReq *FileRequest) ([]byte, error) {
+func ReadFileBuf(path string, fr FileRequest) ([]byte, error) {
 
-	fd, err := syscall.Open(path, syscall.O_RDONLY, 0644)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 
-	buf, err := syscall.Mmap(fd, fileReq.Offset, int(fileReq.BlockSize), syscall.PROT_READ, syscall.MAP_SHARED)
+	buf, err := syscall.Mmap(int(f.Fd()), fr.Interest*PIECE_SIZE, PIECE_SIZE, syscall.PROT_READ, syscall.MAP_SHARED)
 
 	if err != nil {
 		fmt.Println("[ PIECE CREATION ]: Error accessing memory mapped disk")
 		return nil, err
 	}
+	fileInfo, err := f.Stat()
+	if err != nil {
+		return []byte{}, err
+	}
 	// if the remaining bytes is less than the block size, then only read the remaining bytes
-	rem := min(fileReq.BlockSize, fileReq.Size-fileReq.Offset)
+	rem := min(PIECE_SIZE, fileInfo.Size()-(fr.Interest*PIECE_SIZE))
 	tmp := make([]byte, rem)
 	copy(tmp, buf[:rem])
 
@@ -143,8 +111,6 @@ func ReadFileBuf(path string, fileReq *FileRequest) ([]byte, error) {
 		fmt.Println("[ PIECE CREATION ]: Error accessing memory mapped disk")
 		return nil, err
 	}
-
-	fileReq.Offset += int64(fileReq.BlockSize)
 	return tmp, nil
 }
 
@@ -189,10 +155,10 @@ func NewFileMetaData(fileSource string) (FileMetaData, error) {
 	newMetaData := FileMetaData{
 		Name:      file.Name(),
 		Hash:      hash,
-		Size:      fileSize,
-		BlockSize: int64(os.Getpagesize()),
+		BufSize:   fileSize,
+		BlockSize: PIECE_SIZE,
 	}
-	newMetaData.Pieces = uint64(math.Ceil(float64(newMetaData.Size) / float64(newMetaData.BlockSize)))
+	newMetaData.Pieces = uint64(math.Ceil(float64(newMetaData.BufSize) / float64(newMetaData.BlockSize)))
 
 	return newMetaData, nil
 }
