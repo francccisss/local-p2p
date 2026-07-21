@@ -20,7 +20,7 @@ type FileMetaData struct {
 	Name      string
 	Hash      string
 	BufSize   uint64
-	BlockSize int64
+	PieceSize int64
 	Pieces    uint64
 }
 
@@ -32,11 +32,11 @@ const ATTRIBUTE_STRING = "user.file_hash"
 // used for RPC Message by requester
 type FileRequest struct {
 	Hash     string
-	Interest int64
+	Interest int64 // Interest starts at index 0, so if there is m pieces then interest should be m-1
 }
 
 // used for RPC Message by receiver to reply to the iniator
-// BUG: size only 24, where actual data is 72 bytes
+// TODO: size only 24, where actual data is 72 bytes, which evaluates on runtime
 type PieceHeader struct {
 	FileHash  FileHash
 	PieceSize uint64 // from blockSize or remaining bytes
@@ -45,7 +45,7 @@ type PieceHeader struct {
 // Hash(64 long characters) & PieceSize 8 bytes
 func ParsePieceHeader(buf *[]byte) (Header PieceHeader, Error error) {
 	header := (*buf)[:PIECE_HEADER_SIZE]
-	ps := binary.LittleEndian.Uint64(header[FILE_HASH_SIZE : FILE_HASH_SIZE+PIECE_HEADER_SIZE])
+	ps := binary.LittleEndian.Uint64(header[FILE_HASH_SIZE:PIECE_HEADER_SIZE])
 
 	ph := PieceHeader{
 		FileHash:  string(header[:FILE_HASH_SIZE]),
@@ -73,7 +73,7 @@ func CreateDataPiece(path string, fr FileRequest) (DataPiece *[]byte, Error erro
 
 	pieceSizeBuf := make([]byte, 8)
 
-	n := binary.PutUvarint(pieceSizeBuf, PIECE_SIZE)
+	n := binary.PutUvarint(pieceSizeBuf, uint64(len(fileBuf)))
 
 	if n < 1 {
 		return nil, fmt.Errorf("unable to write piece size to buffer")
@@ -85,8 +85,8 @@ func CreateDataPiece(path string, fr FileRequest) (DataPiece *[]byte, Error erro
 	DataPieceBuffer = append(DataPieceBuffer, []byte(fr.Hash)...)
 	fmt.Printf("Hash: %s\n", DataPieceBuffer[:FILE_HASH_SIZE])
 
-	DataPieceBuffer = append(DataPieceBuffer, pieceSizeBuf[:n]...)
-	fmt.Printf("pieceSizeBuf: %d\n", DataPieceBuffer[FILE_HASH_SIZE:PIECE_HEADER_SIZE])
+	DataPieceBuffer = append(DataPieceBuffer, pieceSizeBuf...)
+	fmt.Printf("original: %d ,pieceSizeBuf: %d\n", len(fileBuf), DataPieceBuffer[FILE_HASH_SIZE:PIECE_HEADER_SIZE])
 
 	DataPieceBuffer = append(DataPieceBuffer, fileBuf...)
 
@@ -163,9 +163,9 @@ func NewFileMetaData(fileSource string) (FileMetaData, error) {
 		Name:      file.Name(),
 		Hash:      hash,
 		BufSize:   fileSize,
-		BlockSize: PIECE_SIZE,
+		PieceSize: PIECE_SIZE,
 	}
-	newMetaData.Pieces = uint64(math.Ceil(float64(newMetaData.BufSize) / float64(newMetaData.BlockSize)))
+	newMetaData.Pieces = uint64(math.Ceil(float64(newMetaData.BufSize) / float64(newMetaData.PieceSize)))
 
 	return newMetaData, nil
 }

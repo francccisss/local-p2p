@@ -17,7 +17,6 @@ func TestDataPieces(t *testing.T) {
 	}
 	fmt.Printf("%+v", mtd)
 	bf := bitfield.NewBitField(int(mtd.Pieces))
-	fmt.Println(len(bf))
 	bf.FillBits()
 
 	fr := protocol.FileRequest{Hash: mtd.Hash, Interest: 0}

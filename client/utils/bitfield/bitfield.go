@@ -5,46 +5,66 @@ import (
 	"math"
 )
 
-type BitField []byte
+type BitField struct {
+	b         []byte
+	byteCount int
+	pieces    int
+}
 
-const BYTE_SIZE = 8
+const BYTE_COUNT = 8
 const MINIMUM_PIECE = 1
 
 func NewBitField(piecesCount int) BitField {
-	size := max(piecesCount/8, MINIMUM_PIECE)
-	bitField := make([]byte, size)
-	return bitField
+	byteCount := max(piecesCount/8, MINIMUM_PIECE)
+	bf := BitField{
+		b:         make([]byte, byteCount),
+		byteCount: byteCount,
+		pieces:    piecesCount,
+	}
+	fmt.Printf("BitField: %+v\n", bf)
+	return bf
 }
 
-// `val` position to shift to
-func (b *BitField) LeftShift(val int) {
+// `pos` position to shift to
+func (bf *BitField) LeftShift(pos int) {
+	// pos is the interest that starts at index 0
+	// checking it against byteCount makes sure that
+	// no access to further reads is possible if > bf.byteCount
+	if pos+1 > bf.pieces {
+		panic("Index is greater than BitField byteCount")
+	}
+
 	t := 0
-	for n := range *b {
-		t += BYTE_SIZE
-		fmt.Printf("t val: %d, shift val: %d\n", t, val)
-		if t >= val {
+	for n := range bf.b {
+		t += BYTE_COUNT
+		fmt.Printf("t pos: %d, shift pos: %d\n", t, pos)
+		if t >= pos {
 			max := t                                          // [...max]
-			base := t - BYTE_SIZE + 1                         // [base...]
-			dif := int(math.Abs(float64(max) - float64(val))) // [base..dif..max]
+			base := t - BYTE_COUNT + 1                        // [base...]
+			dif := int(math.Abs(float64(max) - float64(pos))) // [base..dif..max]
 			fmt.Printf("shifting within pos: %d and base pos: %d, dif %d\n", t, base, dif)
 			fmt.Printf("Shifted in byte pos: %d\n", n)
-			(*b)[n] |= 1 << dif
+			bf.b[n] |= 1 << dif
 			break
 		}
 	}
 }
 
-func (b *BitField) CheckBit(pos int) bool {
+func (bf *BitField) CheckBit(pos int) bool {
+
+	if pos+1 > bf.pieces {
+		panic("Index is greater than BitField byteCount")
+	}
 	t := 0
-	for i := range *b {
-		t = i * BYTE_SIZE
+	for i := range bf.b {
+		t = i * BYTE_COUNT
 		if t >= pos {
 			max := t                                          // [...max]
-			base := t - BYTE_SIZE + 1                         // [base...]
+			base := t - BYTE_COUNT + 1                        // [base...]
 			dif := int(math.Abs(float64(max) - float64(pos))) // [base..dif..max]
 			fmt.Printf("within pos: %d and base pos: %d, dif %d\n", t, base, dif)
 			fmt.Printf("in byte pos: %d\n", i)
-			if (*b)[i]&(1<<dif) == 1 {
+			if bf.b[i]&(1<<dif) == 1 {
 				return true
 			}
 			return false
@@ -54,12 +74,16 @@ func (b *BitField) CheckBit(pos int) bool {
 
 }
 
-func (b *BitField) FillBits() {
-	fmt.Println("REEEEEEEEEEEEEE")
-	for i := range *b {
-		for j := range BYTE_SIZE {
-			(*b)[i] |= 1 << j
+func (bf *BitField) FillBits() {
+	l := 0
+	for i := range bf.b {
+		for j := range BYTE_COUNT {
+			l++
+			fmt.Printf("l: %d\n", l)
+			if l <= bf.pieces {
+				bf.b[i] |= 1 << j
+			}
 		}
-		fmt.Printf("[%d]: %b\n", i, (*b)[i])
+		fmt.Printf("[%d]: %b\n", i, bf.b[i])
 	}
 }
