@@ -25,5 +25,18 @@ func TestDataPieces(t *testing.T) {
 	if !bf.CheckBit(int(fr.Interest)) {
 		t.Fatal("[ TESTING ERROR ]: Bit set to 0")
 	}
-	// protocol.CreateDataPiece(PATH, fr)
+	entry, path, err := protocol.Checkfile(mtd.Hash, PATH)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("path: %s. entry: %s\n", path, entry)
+	b, err := protocol.CreateDataPiece(path+entry.Name(), fr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pieceHeader, err := protocol.ParsePieceHeader(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("Piece Header: %+v\n", pieceHeader)
 }

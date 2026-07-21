@@ -1,12 +1,10 @@
 package protocol
 
 import (
-	"bytes"
 	"client/utils"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -38,6 +36,7 @@ type FileRequest struct {
 }
 
 // used for RPC Message by receiver to reply to the iniator
+// BUG: size only 24, where actual data is 72 bytes
 type PieceHeader struct {
 	FileHash  FileHash
 	PieceSize uint64 // from blockSize or remaining bytes
@@ -45,12 +44,14 @@ type PieceHeader struct {
 
 // Hash(64 long characters) & PieceSize 8 bytes
 func ParsePieceHeader(buf *[]byte) (Header PieceHeader, Error error) {
-	ph := PieceHeader{}
-	err := json.Unmarshal(*buf, &ph)
-	if err != nil {
-		fmt.Println("Unable to Unmarshal Piece Header")
-		return PieceHeader{}, err
+	header := (*buf)[:PIECE_HEADER_SIZE]
+	ps := binary.LittleEndian.Uint64(header[FILE_HASH_SIZE : FILE_HASH_SIZE+PIECE_HEADER_SIZE])
+
+	ph := PieceHeader{
+		FileHash:  string(header[:FILE_HASH_SIZE]),
+		PieceSize: ps,
 	}
+
 	return ph, nil
 }
 
@@ -59,7 +60,8 @@ func ParsePieceHeader(buf *[]byte) (Header PieceHeader, Error error) {
 // Size is 8 bytes
 // Payload is fixed 256KB
 // Piece Header -> [Hash, PayloadSize] -> [PayLoad]
-func CreateDataPiece(path string, fr FileRequest) (DataPiece *bytes.Buffer, Error error) {
+// path + file_name
+func CreateDataPiece(path string, fr FileRequest) (DataPiece *[]byte, Error error) {
 
 	fmt.Printf("[ PIECE CREATION ]: Creating Pieces for %s\n", fr.Hash)
 	fileBuf, err := ReadFileBuf(path, fr)
@@ -67,23 +69,28 @@ func CreateDataPiece(path string, fr FileRequest) (DataPiece *bytes.Buffer, Erro
 		return nil, err
 	}
 
-	// TODO: very scuffed way to create the header and buffer for the piece, should be refactored in the future
-	DataPieceBuffer := new(bytes.Buffer)
+	DataPieceBuffer := make([]byte, 0, PIECE_HEADER_SIZE+PIECE_SIZE)
 
-	DataPieceBuffer.Grow(FILE_HASH_SIZE + PIECE_SIZE)
 	pieceSizeBuf := make([]byte, 8)
+
 	n := binary.PutUvarint(pieceSizeBuf, PIECE_SIZE)
+
 	if n < 1 {
 		return nil, fmt.Errorf("unable to write piece size to buffer")
 	}
 
-	DataPieceBuffer.Write([]byte(fr.Hash))
+	fmt.Printf("String Hash: %s, Buf: %s\n", fr.Hash, []byte(fr.Hash))
+	fmt.Printf("Payload Size: %d\n", pieceSizeBuf)
 
-	DataPieceBuffer.Write(pieceSizeBuf[:n])
+	DataPieceBuffer = append(DataPieceBuffer, []byte(fr.Hash)...)
+	fmt.Printf("Hash: %s\n", DataPieceBuffer[:FILE_HASH_SIZE])
 
-	DataPieceBuffer.Write(fileBuf)
+	DataPieceBuffer = append(DataPieceBuffer, pieceSizeBuf[:n]...)
+	fmt.Printf("pieceSizeBuf: %d\n", DataPieceBuffer[FILE_HASH_SIZE:PIECE_HEADER_SIZE])
 
-	return DataPieceBuffer, nil
+	DataPieceBuffer = append(DataPieceBuffer, fileBuf...)
+
+	return &DataPieceBuffer, nil
 }
 
 func ReadFileBuf(path string, fr FileRequest) ([]byte, error) {
@@ -183,7 +190,8 @@ func EmbbedFileHashID(hash FileHash, file *os.File) error {
 	return nil
 }
 
-func Checkfile(fileHash FileHash, FILE_LOCATION string) (os.DirEntry, string, error) {
+// Always should be ran before creating data pieces to verify its existence
+func Checkfile(fileHash FileHash, FILE_LOCATION string) (Entry os.DirEntry, Path string, Error error) {
 
 	programwd, err := os.Getwd()
 	if err != nil {
