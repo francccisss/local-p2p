@@ -163,8 +163,11 @@ func (n *Node) RecvRPCMessage(msg RPCMsgHeader, payload Payload, conn io.ReadWri
 			}
 
 		case LEECH:
-			// sends HAVE afterwards
-			return HandleLeechResponse(msg, payload, conn)
+			HandleLeechResponse(msg, payload, conn, clt)
+			// if err != nil {
+			// 	return err
+			// }
+			return nil
 
 		case PROBE:
 			return HandleProbeResponse(msg, payload)

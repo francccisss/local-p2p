@@ -24,9 +24,14 @@ type FileMetaData struct {
 	Pieces    int
 }
 
+// FOR PARSING DATA PIECE HEADERS
 const FILE_HASH_SIZE = 64
+const PIECE_INDEX_SIZE = 4
+
 const PIECE_SIZE = (256 * 1024)
-const PIECE_HEADER_SIZE = 8 + 64
+
+// const PIECE_SIZE = (2048)
+const PIECE_HEADER_SIZE = 8 + 4 + 64
 const ATTRIBUTE_STRING = "user.file_hash"
 
 // used for RPC Message by requester
@@ -38,18 +43,21 @@ type FileRequest struct {
 // used for RPC Message by receiver to reply to the iniator
 // TODO: size only 24, where actual data is 72 bytes, which evaluates on runtime
 type PieceHeader struct {
-	FileHash  FileHash
-	PieceSize uint64 // from blockSize or remaining bytes
+	FileHash   FileHash
+	PieceIndex uint32
+	PieceSize  uint64 // from blockSize or remaining bytes
 }
 
 // Hash(64 long characters) & PieceSize 8 bytes
 func ParsePieceHeader(buf *[]byte) (Header PieceHeader, Error error) {
 	header := (*buf)[:PIECE_HEADER_SIZE]
-	ps := binary.LittleEndian.Uint64(header[FILE_HASH_SIZE:PIECE_HEADER_SIZE])
+	pi := binary.LittleEndian.Uint32(header[FILE_HASH_SIZE : FILE_HASH_SIZE+PIECE_INDEX_SIZE])
+	ps := binary.LittleEndian.Uint64(header[FILE_HASH_SIZE+PIECE_INDEX_SIZE : PIECE_HEADER_SIZE])
 
 	ph := PieceHeader{
-		FileHash:  string(header[:FILE_HASH_SIZE]),
-		PieceSize: ps,
+		FileHash:   string(header[:FILE_HASH_SIZE]),
+		PieceIndex: pi,
+		PieceSize:  ps,
 	}
 
 	return ph, nil
@@ -57,9 +65,10 @@ func ParsePieceHeader(buf *[]byte) (Header PieceHeader, Error error) {
 
 // ClusterName is var length (runtime)
 // Hash is FILE_HASH_SIZE 64 bytes
+// PieceIndex 4 bytes
 // Size is 8 bytes
 // Payload is fixed 256KB
-// Piece Header -> [Hash, PayloadSize] -> [PayLoad]
+// Piece Header -> [Hash, piece index, PayloadSize] -> [PayLoad]
 // path + file_name
 func CreateDataPiece(path string, fr FileRequest) (DataPiece *[]byte, Error error) {
 
@@ -71,9 +80,13 @@ func CreateDataPiece(path string, fr FileRequest) (DataPiece *[]byte, Error erro
 
 	DataPieceBuffer := make([]byte, 0, PIECE_HEADER_SIZE+PIECE_SIZE)
 
+	pieceIndexBuf := make([]byte, 4)
+
 	pieceSizeBuf := make([]byte, 8)
 
 	binary.LittleEndian.PutUint64(pieceSizeBuf, uint64(len(fileBuf)))
+
+	binary.LittleEndian.PutUint32(pieceIndexBuf, uint32(fr.Interest))
 
 	fmt.Printf("String Hash: %s, Buf: %s\n", fr.Hash, []byte(fr.Hash))
 	fmt.Printf("Payload Size: %d\n", pieceSizeBuf)
@@ -81,8 +94,11 @@ func CreateDataPiece(path string, fr FileRequest) (DataPiece *[]byte, Error erro
 	DataPieceBuffer = append(DataPieceBuffer, []byte(fr.Hash)...)
 	fmt.Printf("Hash: %s\n", DataPieceBuffer[:FILE_HASH_SIZE])
 
+	DataPieceBuffer = append(DataPieceBuffer, pieceIndexBuf...)
+	fmt.Printf("interest original: %d, piece index buf: %d \n", fr.Interest, DataPieceBuffer[FILE_HASH_SIZE:])
+
 	DataPieceBuffer = append(DataPieceBuffer, pieceSizeBuf...)
-	fmt.Printf("original: %d ,pieceSizeBuf: %d\n", len(fileBuf), DataPieceBuffer[FILE_HASH_SIZE:PIECE_HEADER_SIZE])
+	fmt.Printf("piece size original: %d ,pieceSizeBuf: %d\n", len(fileBuf), DataPieceBuffer[FILE_HASH_SIZE+PIECE_INDEX_SIZE:PIECE_HEADER_SIZE])
 
 	DataPieceBuffer = append(DataPieceBuffer, fileBuf...)
 
