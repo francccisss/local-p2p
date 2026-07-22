@@ -36,14 +36,15 @@ func (bf *BitField) LeftShift(pos int) {
 	}
 
 	t := 0
-	for n := range bf.b {
+	for i := range bf.b {
+		fmt.Printf("[LEFT SHIFT]-[%d]: %0b\n", i, bf.b[i])
 		t += UNIT_SIZE
-		fmt.Printf("t pos: %d, shift pos: %d\n", t, pos)
 		if t >= pos {
-			base := t - UNIT_SIZE  // [base...]
-			dif := pos % UNIT_SIZE // [base..dif..max]
-			fmt.Printf("shifting within pos: %d and base pos: %d, dif %d\n", t, base, dif)
-			bf.b[n] |= 1 << dif
+			base := int(math.Abs(float64(t - UNIT_SIZE))) // [base...]
+			dif := pos % UNIT_SIZE                        // [base..dif..max]
+			fmt.Printf("[LEFT SHIFT]: shifting within pos: %d and base pos: %d, dif %d\n", t, base, dif)
+			bf.b[i] |= 1 << dif
+			fmt.Printf("[LEFT SHIFT]-[%d]: %0b\n", i, bf.b[i])
 			break
 		}
 	}
@@ -56,14 +57,18 @@ func (bf *BitField) CheckBit(pos int) bool {
 	}
 	t := 0
 	for i := range bf.b {
-		t = i * UNIT_SIZE
+
+		fmt.Printf("[CHECKBIT]-[%d]: %0b\n", i, bf.b[i])
+		t += UNIT_SIZE
 		if t >= pos {
-			base := t - UNIT_SIZE  // [base...]
-			dif := pos % UNIT_SIZE // [base..dif..max]
-			fmt.Printf("within unit '%d' and base pos: %d, dif %d\n", t, base, dif)
-			if bf.b[i]&(1<<dif) == 1 {
+			base := int(math.Abs(float64(t - UNIT_SIZE))) // [base...]
+			dif := pos % UNIT_SIZE                        // [base..dif..max]
+			fmt.Printf("[CHECKBIT]:within unit '%d' and base pos: %d, dif %d\n", t, base, dif)
+			// returns the value
+			if bf.b[i]&(1<<dif) > 0 {
 				return true
 			}
+			fmt.Printf("UNIT-[%d]: %0b\n", i, bf.b[i])
 			return false
 		}
 	}
@@ -94,9 +99,12 @@ func (bf *BitField) FillBits() {
 	}
 }
 func (bf *BitField) PrintBitField() {
+	fmt.Println("[PRINT UNIT START]")
 	for i := range bf.b {
-		fmt.Printf("[%d]: %0b\n", i, bf.b[i])
+		fmt.Printf("UNIT-[%d]: %0b\n", i, bf.b[i])
 
 	}
+
+	fmt.Println("[PRINT UNIT END]")
 
 }

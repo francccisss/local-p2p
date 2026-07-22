@@ -11,16 +11,17 @@ const TEST_FILE = "newfile.webp"
 const PATH = "/files/"
 
 func TestDataPieces(t *testing.T) {
-	mtd, err := protocol.NewFileMetaData("./files/newfile.webp")
+	mtd, err := protocol.NewFileMetaData("./files/Advanced.Programming.in.the.UNIX.Environment.3rd.Edition.0321637739.pdf")
 	if err != nil {
 		t.Fatal(err)
 	}
 	fmt.Printf("%+v", mtd)
 	bf := bitfield.NewBitField(int(mtd.Pieces))
-	bf.FillBits()
 
-	fr := protocol.FileRequest{Hash: mtd.Hash, Interest: 0}
+	fr := protocol.FileRequest{Hash: mtd.Hash, Interest: 2}
 
+	bf.LeftShift(fr.Interest)
+	bf.PrintBitField()
 	if !bf.CheckBit(int(fr.Interest)) {
 		t.Fatal("[ TESTING ERROR ]: Bit set to 0")
 	}
