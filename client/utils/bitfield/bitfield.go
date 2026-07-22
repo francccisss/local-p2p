@@ -6,19 +6,20 @@ import (
 )
 
 type BitField struct {
-	b         []byte
-	byteCount int
+	b         []int
+	unitCount int
 	pieces    int
 }
 
-const BYTE_COUNT = 8
+// a unit represents the container of all the 32 bits field of a file
+const UNIT_SIZE = 32
 const MINIMUM_PIECE = 1
 
 func NewBitField(piecesCount int) BitField {
-	byteCount := max(piecesCount/8, MINIMUM_PIECE)
+	unit := max(int(math.Ceil(float64(piecesCount)/float64(UNIT_SIZE))), MINIMUM_PIECE)
 	bf := BitField{
-		b:         make([]byte, byteCount),
-		byteCount: byteCount,
+		b:         make([]int, unit),
+		unitCount: unit,
 		pieces:    piecesCount,
 	}
 	fmt.Printf("BitField: %+v\n", bf)
@@ -28,19 +29,19 @@ func NewBitField(piecesCount int) BitField {
 // `pos` position to shift to
 func (bf *BitField) LeftShift(pos int) {
 	// pos is the interest that starts at index 0
-	// checking it against byteCount makes sure that
-	// no access to further reads is possible if > bf.byteCount
+	// checking it against unitCount makes sure that
+	// no access to further reads is possible if > bf.unitCount
 	if pos+1 > bf.pieces {
-		panic("Index is greater than BitField byteCount")
+		panic("Index is greater than BitField unitCount")
 	}
 
 	t := 0
 	for n := range bf.b {
-		t += BYTE_COUNT
+		t += UNIT_SIZE
 		fmt.Printf("t pos: %d, shift pos: %d\n", t, pos)
 		if t >= pos {
 			max := t                                          // [...max]
-			base := t - BYTE_COUNT + 1                        // [base...]
+			base := t - UNIT_SIZE + 1                         // [base...]
 			dif := int(math.Abs(float64(max) - float64(pos))) // [base..dif..max]
 			fmt.Printf("shifting within pos: %d and base pos: %d, dif %d\n", t, base, dif)
 			fmt.Printf("Shifted in byte pos: %d\n", n)
@@ -53,17 +54,17 @@ func (bf *BitField) LeftShift(pos int) {
 func (bf *BitField) CheckBit(pos int) bool {
 
 	if pos+1 > bf.pieces {
-		panic("Index is greater than BitField byteCount")
+		panic("Index is greater than BitField unitCount")
 	}
 	t := 0
 	for i := range bf.b {
-		t = i * BYTE_COUNT
+		t = i * UNIT_SIZE
 		if t >= pos {
 			max := t                                          // [...max]
-			base := t - BYTE_COUNT + 1                        // [base...]
+			base := t - UNIT_SIZE + 1                         // [base...]
 			dif := int(math.Abs(float64(max) - float64(pos))) // [base..dif..max]
 			fmt.Printf("within pos: %d and base pos: %d, dif %d\n", t, base, dif)
-			fmt.Printf("in byte pos: %d\n", i)
+			fmt.Printf("in int pos: %d\n", i)
 			if bf.b[i]&(1<<dif) == 1 {
 				return true
 			}
@@ -74,16 +75,32 @@ func (bf *BitField) CheckBit(pos int) bool {
 
 }
 
+// reports missing
+func (bf *BitField) CheckBitFields() (missing []int, isFilled bool) {
+
+	// t := 0
+	// missingTmp := make([]int, bf.unitCount)
+	// for i := range bf.b {
+	//
+	// }
+	return []int{}, false
+}
+
 func (bf *BitField) FillBits() {
 	l := 0
 	for i := range bf.b {
-		for j := range BYTE_COUNT {
+		for j := range UNIT_SIZE {
 			l++
-			fmt.Printf("l: %d\n", l)
 			if l <= bf.pieces {
 				bf.b[i] |= 1 << j
 			}
 		}
-		fmt.Printf("[%d]: %b\n", i, bf.b[i])
 	}
+}
+func (bf *BitField) PrintBitField() {
+	for i := range bf.b {
+		fmt.Printf("[%d]: %0b\n", i, bf.b[i])
+
+	}
+
 }
