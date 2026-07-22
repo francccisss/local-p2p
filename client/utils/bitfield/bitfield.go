@@ -20,7 +20,7 @@ func NewBitField(piecesCount int) BitField {
 	bf := BitField{
 		b:         make([]int, unit),
 		unitCount: unit,
-		pieces:    piecesCount,
+		pieces:    piecesCount - 1, // interest starts at index 0
 	}
 	fmt.Printf("BitField: %+v\n", bf)
 	return bf
@@ -31,8 +31,8 @@ func (bf *BitField) LeftShift(pos int) {
 	// pos is the interest that starts at index 0
 	// checking it against unitCount makes sure that
 	// no access to further reads is possible if > bf.unitCount
-	if pos+1 > bf.pieces {
-		panic("Index is greater than BitField unitCount")
+	if pos > bf.pieces {
+		panic("index overflow")
 	}
 
 	t := 0
@@ -40,11 +40,9 @@ func (bf *BitField) LeftShift(pos int) {
 		t += UNIT_SIZE
 		fmt.Printf("t pos: %d, shift pos: %d\n", t, pos)
 		if t >= pos {
-			max := t                                          // [...max]
-			base := t - UNIT_SIZE + 1                         // [base...]
-			dif := int(math.Abs(float64(max) - float64(pos))) // [base..dif..max]
+			base := t - UNIT_SIZE  // [base...]
+			dif := pos % UNIT_SIZE // [base..dif..max]
 			fmt.Printf("shifting within pos: %d and base pos: %d, dif %d\n", t, base, dif)
-			fmt.Printf("Shifted in byte pos: %d\n", n)
 			bf.b[n] |= 1 << dif
 			break
 		}
@@ -53,18 +51,16 @@ func (bf *BitField) LeftShift(pos int) {
 
 func (bf *BitField) CheckBit(pos int) bool {
 
-	if pos+1 > bf.pieces {
-		panic("Index is greater than BitField unitCount")
+	if pos > bf.pieces {
+		panic("index overflow")
 	}
 	t := 0
 	for i := range bf.b {
 		t = i * UNIT_SIZE
 		if t >= pos {
-			max := t                                          // [...max]
-			base := t - UNIT_SIZE + 1                         // [base...]
-			dif := int(math.Abs(float64(max) - float64(pos))) // [base..dif..max]
-			fmt.Printf("within pos: %d and base pos: %d, dif %d\n", t, base, dif)
-			fmt.Printf("in int pos: %d\n", i)
+			base := t - UNIT_SIZE  // [base...]
+			dif := pos % UNIT_SIZE // [base..dif..max]
+			fmt.Printf("within unit '%d' and base pos: %d, dif %d\n", t, base, dif)
 			if bf.b[i]&(1<<dif) == 1 {
 				return true
 			}
