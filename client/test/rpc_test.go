@@ -104,7 +104,7 @@ func TestJoinCluster(t *testing.T) {
 		Status: protocol.IDLE,
 	})
 
-	err := clientNode.JoinCluster(clusterName, clientclt)
+	err := clientNode.JoinCluster(protocol.FileMetaData{Hash: clusterName}, clientclt)
 	// invokes RCP method
 	if err != nil {
 		fmt.Println(err)
@@ -223,19 +223,12 @@ func TestDataDelivery(t *testing.T) {
 	cpeer := cluster.NewClusterPeer(receiverNode.Addr, receiverNode.NodeID, &dhcl, protocol.SEEDING)
 	cluster.AppendClusterPeer(*cpeer)
 
+	cluster.BitField.FillBits()
+
 	requestingNode.Leech(protocol.FileRequest{
 		Hash:     metaData.Hash,
 		Interest: 0,
 	}, clt, true)
-
-	go func() {
-		recvclt := protocol.CreateClusterTable()
-		(*recvclt)[(metaData.Hash)] = protocol.CreateCluster(metaData)
-		recvCluster := (*recvclt)[(metaData.Hash)]
-		recvcPeer := cluster.NewClusterPeer(requestingNode.Addr, requestingNode.NodeID, &dhcl, protocol.LEECHING)
-		recvCluster.AppendClusterPeer(*recvcPeer)
-		connection.MessageHandler(&dhcl, receiverNode, recvclt)
-	}()
 
 	connection.MessageHandler(&dhcl, requestingNode, clt)
 }
