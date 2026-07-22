@@ -129,7 +129,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsgHeader, payload Payload, conn io.ReadWri
 
 		case LEECH:
 			fmt.Printf("[TESTING]: '%s' received a LEECH REQUEST\n", n.NodeID)
-			return HandleLeechRequest(newRPCMsgHeader, msg, payload, conn, n.FILE_LOCATION)
+			return HandleLeechRequest(newRPCMsgHeader, msg, payload, conn, n.FILE_LOCATION, clt)
 		}
 
 	case REPLY: // when peers/nodes send a reaply RPCType
@@ -178,7 +178,7 @@ func (n *Node) RecvRPCMessage(msg RPCMsgHeader, payload Payload, conn io.ReadWri
 // METHODS FOR RPC CALLS
 // ----------------------
 
-func (n *Node) FindCluster(cname ClusterName) error {
+func (n *Node) FindCluster(cname string) error {
 
 	var wg sync.WaitGroup
 
@@ -256,7 +256,7 @@ func (n *Node) PingNodes() error {
 }
 
 // Pinging cluster uses the existing TCP connections for communication
-func (n *Node) PingCluster(cname ClusterName, clt *ClusterTable) error {
+func (n *Node) PingCluster(cname string, clt *ClusterTable) error {
 
 	var newMsg RPCMsgHeader = RPCMsgHeader{
 		RPCType:    CALL,
@@ -292,7 +292,7 @@ func (n *Node) PingCluster(cname ClusterName, clt *ClusterTable) error {
 	return nil
 }
 
-func (n *Node) ProbeFile(cname ClusterName, clt *ClusterTable) error {
+func (n *Node) ProbeFile(cname string, clt *ClusterTable) error {
 	c, ok := (*clt)[cname]
 	if !ok {
 		return fmt.Errorf("[CALLING]: PROBE[ERROR] - 'Cluster does not exist'")
@@ -338,7 +338,8 @@ func (n *Node) ProbeFile(cname ClusterName, clt *ClusterTable) error {
 
 }
 
-func (n *Node) JoinCluster(cname ClusterName, clt *ClusterTable) error {
+// Be called AFTER creating a cluster and appending bootstrapped nodes on cluster
+func (n *Node) JoinCluster(fmd FileMetaData, clt *ClusterTable) error {
 
 	newMsg := RPCMsgHeader{
 		NodeID:  n.NodeID,
@@ -351,15 +352,9 @@ func (n *Node) JoinCluster(cname ClusterName, clt *ClusterTable) error {
 
 	binary.LittleEndian.PutUint32(newMsg.Port, uint32(n.Addr.Port))
 
-	ct, ok := (*clt)[cname]
+	cluster := (*clt)[fmd.Hash]
 
-	if !ok {
-		return fmt.Errorf("[CALLING]: JOIN_CLUSTER[ERROR] - 'Cluster %s does not exist'\n", cname)
-	}
-
-	joinReq := ct.ClusterName
-
-	b, err := WrapPayloadToBuffer(newMsg, []byte(joinReq))
+	b, err := WrapPayloadToBuffer(newMsg, []byte(fmd.Hash))
 
 	if err != nil {
 		return fmt.Errorf("[CALLING]: JOIN_CLUSTER[ERROR] - '%s'\n", err.Error())
@@ -367,7 +362,7 @@ func (n *Node) JoinCluster(cname ClusterName, clt *ClusterTable) error {
 
 	// TODO: Need to dial instead of using tcp write
 	// TODO: Change this afterwards
-	for _, nc := range ct.ClusterPeers {
+	for _, nc := range cluster.ClusterPeers {
 		_, err := nc.Conn.Write(b)
 		if err != nil {
 			continue
@@ -377,9 +372,9 @@ func (n *Node) JoinCluster(cname ClusterName, clt *ClusterTable) error {
 	return nil
 }
 
-func (n *Node) Leech(cname ClusterName, fr FileRequest, clt *ClusterTable, isConnectionExist bool) error {
+func (n *Node) Leech(fr FileRequest, clt *ClusterTable, isConnectionExist bool) error {
 
-	c, ok := (*clt)[cname]
+	c, ok := (*clt)[fr.Hash]
 	if !ok {
 		return fmt.Errorf("Cluster does not exist")
 	}
@@ -387,10 +382,10 @@ func (n *Node) Leech(cname ClusterName, fr FileRequest, clt *ClusterTable, isCon
 	if len(c.ClusterPeers) == 0 {
 		return fmt.Errorf("There are no peers to leech from")
 	}
-	fmt.Printf("[LEECH REQUEST]: number of peers in '%s' cluster: %d\n", cname, len(c.ClusterPeers))
+	fmt.Printf("[LEECH REQUEST]: number of peers in '%s' cluster: %d\n", c.ClusterName, len(c.ClusterPeers))
 	c.Node.Status = LEECHING
 
-	fmt.Printf("[LEECH REQUEST]: Sending request to peers in cluster: %s\n", cname)
+	fmt.Printf("[LEECH REQUEST]: Sending request to peers in cluster: %s\n", c.ClusterName)
 	mds, err := json.Marshal(fr)
 	if err != nil {
 		return err
@@ -423,7 +418,7 @@ func (n *Node) Leech(cname ClusterName, fr FileRequest, clt *ClusterTable, isCon
 		}
 	}
 
-	fmt.Printf("[LEECH REQUEST]: Request sent to peers in cluster: %s\n", cname)
+	fmt.Printf("[LEECH REQUEST]: Request sent to peers in cluster: %s\n", c.ClusterName)
 
 	return nil
 }

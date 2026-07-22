@@ -13,7 +13,7 @@ func HandleFindClusterRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, pa
 	// will always send a string of cluster name to peer
 	fmt.Printf("Checking cluster table for '%s' cluster\n", plcname)
 	// it is always assumed that people that have the existing file should have an entry for cluster
-	cl, ok := (*clt)[ClusterName(plcname)]
+	cl, ok := (*clt)[string(plcname)]
 	// dont need to respond if does not exist anyways
 	if !ok {
 		return nil, fmt.Errorf("Cluster - %s does not exist", plcname)
@@ -67,48 +67,59 @@ func HandlePingNodeRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, paylo
 	return b, nil
 }
 
-func HandleLeechRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, payload []byte, conn io.ReadWriteCloser, FILE_LOCATION string) error {
+func HandleLeechRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, payload []byte, conn io.ReadWriteCloser, FILE_LOCATION string, clt *ClusterTable) error {
 
 	// a call to leech received a single SegmentHeader
 	// a reply to leech receives an array of SegmentHeaders
-	// var fr FileRequest
-	// err := json.Unmarshal(payload, &fr)
-	// if err != nil {
-	// 	fmt.Println("Unable to unmarshal data segment")
-	// 	return err
-	// }
-	// fmt.Println(FILE_LOCATION)
-	// en, path, err := Checkfile(fr.Hash, FILE_LOCATION)
-	// if err != nil {
-	// 	newRPCMsgHeader.Message = err.Error()
-	// 	newRPCMsgHeader.StatusCode = ERROR
-	// 	buff, err := WrapPayloadToBuffer(newRPCMsgHeader, nil)
-	// 	if err != nil {
-	// 		fmt.Println("[ERROR]: Unable to send message")
-	// 	}
-	// 	msgErr := SendViaExistingConn(buff, conn)
-	// 	if msgErr != nil {
-	// 		fmt.Println("[ERROR]: Unable to send message")
-	// 	}
-	// 	return err
-	// }
-	// buf, _, err := CreateDataPiece(path+en.Name(), &fr)
-	// if err != nil {
-	// 	return err
-	// }
-	// b, err := WrapPayloadToBuffer(newRPCMsgHeader, buf.Bytes())
-	// if err != nil {
-	// 	return err
-	// }
-	// err = SendViaExistingConn(b, conn)
-	// if err != nil {
-	// 	return err
-	// }
+	var fr FileRequest
+	err := json.Unmarshal(payload, &fr)
+	if err != nil {
+		fmt.Println("Unable to unmarshal data segment")
+		return err
+	}
+	cluster := (*clt)[fr.Hash]
+	if !cluster.BitField.CheckBit(fr.Interest) {
+		newRPCMsgHeader.Message = "Bitfield not set, pieces does not exist."
+		newRPCMsgHeader.StatusCode = ERROR
+		buff, err := WrapPayloadToBuffer(newRPCMsgHeader, nil)
+		err = SendViaExistingConn(buff, conn)
+		if err != nil {
+			fmt.Println("[ LEECH REQUEST ]: Unable to send via existing connection to peer request.")
+			return err
+		}
+	}
+
+	en, path, err := Checkfile(fr.Hash, FILE_LOCATION)
+	if err != nil {
+		newRPCMsgHeader.Message = err.Error()
+		newRPCMsgHeader.StatusCode = ERROR
+		buff, err := WrapPayloadToBuffer(newRPCMsgHeader, nil)
+		if err != nil {
+			fmt.Println("[ERROR]: Unable to send message")
+		}
+		msgErr := SendViaExistingConn(buff, conn)
+		if msgErr != nil {
+			fmt.Println("[ERROR]: Unable to send message")
+		}
+		return err
+	}
+	buf, err := CreateDataPiece(path+en.Name(), fr)
+	if err != nil {
+		return err
+	}
+	b, err := WrapPayloadToBuffer(newRPCMsgHeader, *buf)
+	if err != nil {
+		return err
+	}
+	err = SendViaExistingConn(b, conn)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func HandleJoinClusterRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, payload []byte, conn io.ReadWriteCloser, clt *ClusterTable) ([]byte, error) {
-	clusterName := JoinRequest(payload)
+	clusterName := string(payload)
 
 	cl, ok := (*clt)[clusterName]
 	if !ok {

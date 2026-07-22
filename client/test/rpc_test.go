@@ -37,7 +37,7 @@ const fileHash_test = "what.txt"
 
 func TestClusterSearch(t *testing.T) {
 	fmt.Println("[Begin Test]: Test Cluster Search")
-	var clusterName protocol.ClusterName = "vim-boys"
+	var clusterName = "vim-boys"
 
 	addr := net.TCPAddr{IP: net.ParseIP("127.0.0.1")}
 	dchl := dummyCommChannel{buf: make(chan []byte, 1), n: 0}
@@ -49,7 +49,7 @@ func TestClusterSearch(t *testing.T) {
 
 	//  writes to dchl
 	clientNode.FindCluster(clusterName)
-	ConsumerNodeReaderWriterToChannel(*receiverNode, &dchl, clusterName)
+	ConsumerNodeReaderWriterToChannel(*receiverNode, &dchl, protocol.FileMetaData{Hash: clusterName})
 
 	bodyBuf := make([]byte, 4096)
 
@@ -82,7 +82,7 @@ func TestClusterSearch(t *testing.T) {
 }
 
 func TestJoinCluster(t *testing.T) {
-	var clusterName protocol.ClusterName = "vim-boys"
+	var clusterName = "vim-boys"
 
 	addr := net.TCPAddr{IP: net.ParseIP("127.0.0.1")}
 	dchl := dummyCommChannel{buf: make(chan []byte, 1), n: 0}
@@ -93,7 +93,7 @@ func TestJoinCluster(t *testing.T) {
 	// after FIND_CLUSTR
 	clientclt := protocol.CreateClusterTable()
 
-	newCluster := protocol.CreateCluster(clusterName, fileHash_test)
+	newCluster := protocol.CreateCluster(protocol.FileMetaData{Hash: clusterName})
 
 	(*clientclt)[clusterName] = newCluster
 
@@ -111,7 +111,7 @@ func TestJoinCluster(t *testing.T) {
 		t.FailNow()
 	}
 
-	ConsumerNodeReaderWriterToChannel(*receiverNode, &dchl, clusterName)
+	ConsumerNodeReaderWriterToChannel(*receiverNode, &dchl, protocol.FileMetaData{Hash: clusterName})
 
 	bodyBuf := make([]byte, 4096)
 
@@ -149,7 +149,7 @@ func TestJoinCluster(t *testing.T) {
 
 func TestProbeFile(t *testing.T) {
 	fmt.Println("[Begin Test]: Test Cluster Search")
-	var clusterName protocol.ClusterName = "vim-boys"
+	var clusterName = "vim-boys"
 
 	addr := net.TCPAddr{IP: net.ParseIP("127.0.0.1")}
 	dchl := dummyCommChannel{buf: make(chan []byte, 1), n: 0}
@@ -157,7 +157,7 @@ func TestProbeFile(t *testing.T) {
 	// different go routine that sends request to receiver node
 	clientNode := protocol.NewNode(protocol.NodeAddr{IP: addr.IP, Port: 3030}, "requester", "")
 	clientclt := protocol.CreateClusterTable()
-	newCluster := protocol.CreateCluster(clusterName, fileHash_test)
+	newCluster := protocol.CreateCluster(protocol.FileMetaData{Hash: clusterName})
 
 	(*clientclt)[clusterName] = newCluster
 
@@ -170,7 +170,7 @@ func TestProbeFile(t *testing.T) {
 		t.FailNow()
 	}
 
-	ConsumerNodeReaderWriterToChannel(*receiverNode, &dchl, clusterName)
+	ConsumerNodeReaderWriterToChannel(*receiverNode, &dchl, protocol.FileMetaData{Hash: clusterName})
 
 	bodyBuf := make([]byte, 4096)
 
@@ -201,40 +201,37 @@ func TestProbeFile(t *testing.T) {
 }
 
 func TestDataDelivery(t *testing.T) {
-	var clusterName protocol.ClusterName = "vim-boys"
 
 	addr := protocol.NodeAddr{IP: net.ParseIP("127.0.0.1"), Port: 5656}
-
-	requestingNode := protocol.NewNode(addr, "requester", "/files/")
-	clt := protocol.CreateClusterTable()
-	(*clt)[clusterName] = protocol.CreateCluster(clusterName, "")
 
 	dhcl := dummyCommChannel{
 		buf: make(chan []byte, 1),
 		n:   0,
 	}
 
-	cluster := (*clt)[clusterName]
-	cpeer := cluster.NewClusterPeer(receiverNode.Addr, receiverNode.NodeID, &dhcl, protocol.SEEDING)
-	cluster.AppendClusterPeer(*cpeer)
+	// receives meta data from the DHT server
 	metaData, err := protocol.NewFileMetaData("./files/new_dir/text.txt")
 	if err != nil {
 		t.Fatal(err.Error())
-
 	}
 
-	requestingNode.Leech(clusterName, protocol.FileRequest{
-		Hash:      metaData.Hash,
-		Size:      int64(metaData.Size),
-		Offset:    0,
-		Pieces:    int64(metaData.Pieces),
-		BlockSize: metaData.BlockSize,
+	requestingNode := protocol.NewNode(addr, "requester", "/files/")
+	clt := protocol.CreateClusterTable()
+	(*clt)[(metaData.Hash)] = protocol.CreateCluster(metaData)
+	cluster := (*clt)[(metaData.Hash)]
+
+	cpeer := cluster.NewClusterPeer(receiverNode.Addr, receiverNode.NodeID, &dhcl, protocol.SEEDING)
+	cluster.AppendClusterPeer(*cpeer)
+
+	requestingNode.Leech(protocol.FileRequest{
+		Hash:     metaData.Hash,
+		Interest: 0,
 	}, clt, true)
 
 	go func() {
 		recvclt := protocol.CreateClusterTable()
-		(*recvclt)[clusterName] = protocol.CreateCluster(clusterName, fileHash_test)
-		recvCluster := (*recvclt)[clusterName]
+		(*recvclt)[(metaData.Hash)] = protocol.CreateCluster(metaData)
+		recvCluster := (*recvclt)[(metaData.Hash)]
 		recvcPeer := cluster.NewClusterPeer(requestingNode.Addr, requestingNode.NodeID, &dhcl, protocol.LEECHING)
 		recvCluster.AppendClusterPeer(*recvcPeer)
 		connection.MessageHandler(&dhcl, receiverNode, recvclt)
@@ -246,9 +243,9 @@ func TestDataDelivery(t *testing.T) {
 // Writes reply to a dummy channel
 
 // Writes reply to a dummy channel
-func ConsumerNodeReaderWriterToChannel(n protocol.Node, dchl *dummyCommChannel, clusterName protocol.ClusterName) {
+func ConsumerNodeReaderWriterToChannel(n protocol.Node, dchl *dummyCommChannel, fmd protocol.FileMetaData) {
 	recvclt := protocol.CreateClusterTable()
-	(*recvclt)[clusterName] = protocol.CreateCluster(clusterName, fileHash_test)
+	(*recvclt)[fmd.Hash] = protocol.CreateCluster(fmd)
 	bodyBuf := make([]byte, 4096)
 
 	var mr connection.MessageReader = connection.MessageReader{

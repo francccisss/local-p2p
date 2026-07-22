@@ -6,8 +6,6 @@ import (
 	"io"
 )
 
-type ClusterName string
-
 // calling Join() sets the TCP connection for the peers in the cluster
 type ClusterPeer struct {
 	Addr         NodeAddr
@@ -18,21 +16,21 @@ type ClusterPeer struct {
 }
 
 type Cluster struct {
-	ClusterName  ClusterName
+	ClusterName  string
 	FileHash     string
 	ClusterPeers []ClusterPeer
 	Node         CurrentNode // Represents the CurrentNode in this process
 	// DHT already provides all that information
 	FileMetaData FileMetaData // no need to send File Request == to File Meta Data
+	BitField     bitfield.BitField
 }
 
 type CurrentNode struct {
 	Status      PeerStatus
-	ClusterName ClusterName
-	BitField    bitfield.BitField
+	ClusterName string
 }
 
-type ClusterTable map[ClusterName]*Cluster
+type ClusterTable map[string]*Cluster
 
 func CreateClusterTable() *ClusterTable {
 	clt := make(ClusterTable)
@@ -40,12 +38,14 @@ func CreateClusterTable() *ClusterTable {
 
 }
 
-func CreateCluster(cname ClusterName, fileHash FileHash) *Cluster {
+func CreateCluster(fmd FileMetaData) *Cluster {
 	newCluster := Cluster{
 		ClusterPeers: []ClusterPeer{},
-		Node:         CurrentNode{Status: IDLE, ClusterName: cname},
-		ClusterName:  cname,
-		FileHash:     fileHash,
+		Node:         CurrentNode{Status: IDLE, ClusterName: fmd.Hash},
+		ClusterName:  fmd.Hash,
+		FileHash:     fmd.Hash,
+		BitField:     bitfield.NewBitField(fmd.Pieces),
+		FileMetaData: fmd,
 	}
 
 	return &newCluster

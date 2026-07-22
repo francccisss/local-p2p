@@ -21,7 +21,7 @@ type FileMetaData struct {
 	Hash      string
 	BufSize   uint64
 	PieceSize int64
-	Pieces    uint64
+	Pieces    int
 }
 
 const FILE_HASH_SIZE = 64
@@ -32,7 +32,7 @@ const ATTRIBUTE_STRING = "user.file_hash"
 // used for RPC Message by requester
 type FileRequest struct {
 	Hash     string
-	Interest int64 // Interest starts at index 0, so if there is m pieces then interest should be m-1
+	Interest int // Interest starts at index 0, so if there is m pieces then interest should be m-1
 }
 
 // used for RPC Message by receiver to reply to the iniator
@@ -96,7 +96,7 @@ func ReadFileBuf(path string, fr FileRequest) ([]byte, error) {
 		return nil, err
 	}
 
-	buf, err := syscall.Mmap(int(f.Fd()), fr.Interest*PIECE_SIZE, PIECE_SIZE, syscall.PROT_READ, syscall.MAP_SHARED)
+	buf, err := syscall.Mmap(int(f.Fd()), int64(fr.Interest*PIECE_SIZE), PIECE_SIZE, syscall.PROT_READ, syscall.MAP_SHARED)
 
 	if err != nil {
 		fmt.Println("[ PIECE CREATION ]: Error accessing memory mapped disk")
@@ -107,7 +107,7 @@ func ReadFileBuf(path string, fr FileRequest) ([]byte, error) {
 		return []byte{}, err
 	}
 	// if the remaining bytes is less than the block size, then only read the remaining bytes
-	rem := min(PIECE_SIZE, fileInfo.Size()-(fr.Interest*PIECE_SIZE))
+	rem := min(PIECE_SIZE, fileInfo.Size()-int64(fr.Interest*PIECE_SIZE))
 	tmp := make([]byte, rem)
 	copy(tmp, buf[:rem])
 
@@ -161,7 +161,7 @@ func NewFileMetaData(fileSource string) (FileMetaData, error) {
 		BufSize:   fileSize,
 		PieceSize: PIECE_SIZE,
 	}
-	newMetaData.Pieces = uint64(math.Ceil(float64(newMetaData.BufSize) / float64(newMetaData.PieceSize)))
+	newMetaData.Pieces = int(math.Ceil(float64(newMetaData.BufSize) / float64(newMetaData.PieceSize)))
 
 	return newMetaData, nil
 }
