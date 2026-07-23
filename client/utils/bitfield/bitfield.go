@@ -79,15 +79,6 @@ func (bf *BitField) CheckBit(pos int) bool {
 
 }
 
-// TODO:
-// STORING MISSING INFORMATION FROM BITFIELD
-// c. set bits per 1 byte's 2^0 position to 1 of each BitFieldUnit
-//
-//	section3|section2|section1|section0
-//
-// BitFieldUnit[ 31..25 | 24..16 | 15..8 | 7..0 ]
-// each beginning bit of each section per BitFieldUnit
-// will be either set to 0 or 1
 const (
 	SEC_0 = 1 << iota * 8 // move by byte size
 	SEC_1
@@ -95,25 +86,18 @@ const (
 	SEC_3
 )
 
-// reports missing
-func (bf *BitField) CheckBitFields() (missing []BitFieldUnit, isFilled bool) {
+// log(n*m), using linear search (slow)
+func (bf *BitField) IsFilled() bool {
 
-	// t := 0
-	// missingTmp := make([]BitFieldUnit, bf.UnitCount)
-
-	// for each unit, check if
-	// every unit is filled by checking if each
-	// unit's 32bit value == unint32 max value
-	// tmpUnit XOR= 0bFF << 1
-	bitMask := ^BitFieldUnit(0)
 	fmt.Println("######### Checking units using bitmask ##########")
-	for _, unit := range bf.b {
-		xorUnit := unit ^ bitMask
-		fmt.Printf("[INTEGER]: XOR_UNIT: %d, UNIT: %d\n", xorUnit, unit)
-		fmt.Printf("[BITS]: XOR_UNIT: %032b, UNIT: %032b\n", xorUnit, unit)
+	for i := range bf.pieces {
+		if !bf.CheckBit(i) {
+			fmt.Printf("[UNIT-%d] not filled\n", i)
+			return false
+		}
 	}
-
-	return []BitFieldUnit{}, false
+	fmt.Printf("UNITS filled\n")
+	return true
 }
 
 func (bf *BitField) FillBits() {

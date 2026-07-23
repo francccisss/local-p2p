@@ -6,12 +6,13 @@ import (
 	"testing"
 )
 
+const PIECE_COUNT = 500
+
 func TestBitField(t *testing.T) {
-	piecesCount := 200
 
-	bf := bitfield.NewBitField(piecesCount)
+	bf := bitfield.NewBitField(PIECE_COUNT)
 
-	for p := range piecesCount {
+	for p := range PIECE_COUNT {
 
 		bf.LeftShift(p)
 		if !bf.CheckBit(p) {
@@ -20,6 +21,19 @@ func TestBitField(t *testing.T) {
 		bf.PrintBitField()
 
 		fmt.Printf("NEXT PIECE\n\n")
+	}
+}
+
+func TestCheckBitFields(t *testing.T) {
+
+	fmt.Println("TESTING CHECK BITFIELDS")
+
+	bf := bitfield.NewBitField(PIECE_COUNT)
+	bf.FillBits()
+	bf.PrintBitField()
+
+	if !bf.IsFilled() {
+		t.Fatal("Not Filled")
 	}
 
 }
