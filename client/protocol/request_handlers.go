@@ -27,9 +27,8 @@ func HandleFindClusterRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, pa
 
 	fmt.Printf("Sending reply back to '%s'\n", msg.NodeID)
 	newResponse := ClusterResponse{
-		ClusterName: cl.ClusterName,
-		Peers:       cl.ClusterPeers,
-		FileHash:    cl.FileHash,
+		Peers:    cl.ClusterPeers,
+		FileHash: cl.ClusterHash,
 	}
 	b, err := json.Marshal(newResponse)
 	if err != nil {
@@ -126,7 +125,7 @@ func HandleJoinClusterRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, pa
 		return nil, fmt.Errorf("'Cluster %s does not exist'\n", clusterName)
 	}
 
-	fmt.Printf("[CALL]: JOIN - 'Adding '%s' as new peer to '%s cluster'\n", msg.NodeID, cl.ClusterName)
+	fmt.Printf("[CALL]: JOIN - 'Adding '%s' as new peer to '%s cluster'\n", msg.NodeID, cl.ClusterHash)
 	ncp := cl.NewClusterPeer(NodeAddr{IP: msg.IP, Port: int(binary.LittleEndian.Uint32(msg.Port))}, msg.NodeID, conn, IDLE)
 	err := cl.AppendClusterPeer(*ncp)
 	if err != nil {
@@ -138,7 +137,7 @@ func HandleJoinClusterRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, pa
 	joinResponse := JoinResponse{
 		NodeID:      newRPCMsgHeader.NodeID,
 		Status:      cl.Node.Status,
-		ClusterName: cl.ClusterName,
+		ClusterHash: cl.ClusterHash,
 	}
 	b, err := json.Marshal(joinResponse)
 	if err != nil {
@@ -173,9 +172,6 @@ func HandleProbeRequest(newRPCMsgHeader RPCMsgHeader, msg RPCMsgHeader, payload 
 	return b, nil
 }
 
-// TODO: add checksum parameter passed in by caller
-// each file corresponds to a cluster name
-
 func ProbeFile(FILE_LOCATION string, fileHash FileHash) (FileMetaData, error) {
 
 	entry, path, err := Checkfile(fileHash, FILE_LOCATION)
@@ -198,6 +194,5 @@ func ProbeFile(FILE_LOCATION string, fileHash FileHash) (FileMetaData, error) {
 
 	fmt.Printf("file length: %d\n", len(fileBuffer))
 
-	// check data integrity of file using checksum
 	return FileMetaData{Name: file.Name(), Hash: fileHash, BufSize: uint64(file.Size())}, nil
 }

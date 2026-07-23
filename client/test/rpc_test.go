@@ -225,10 +225,12 @@ func TestDataDelivery(t *testing.T) {
 
 	cluster.BitField.FillBits()
 
-	requestingNode.Leech(protocol.FileRequest{
-		Hash:     metaData.Hash,
-		Interest: 0,
-	}, clt, true)
+	for _, c := range cluster.ClusterPeers {
+		requestingNode.Leech(protocol.FileRequest{
+			Hash:     metaData.Hash,
+			Interest: 0,
+		}, c, true)
+	}
 
 	connection.MessageHandler(&dhcl, requestingNode, clt)
 }

@@ -44,7 +44,7 @@ type FileRequest struct {
 // TODO: size only 24, where actual data is 72 bytes, which evaluates on runtime
 type PieceHeader struct {
 	FileHash   FileHash
-	PieceIndex uint32
+	PieceIndex int
 	PieceSize  uint64 // from blockSize or remaining bytes
 }
 
@@ -56,7 +56,7 @@ func ParsePieceHeader(buf *[]byte) (Header PieceHeader, Error error) {
 
 	ph := PieceHeader{
 		FileHash:   string(header[:FILE_HASH_SIZE]),
-		PieceIndex: pi,
+		PieceIndex: int(pi),
 		PieceSize:  ps,
 	}
 

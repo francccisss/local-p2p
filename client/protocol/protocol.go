@@ -70,7 +70,7 @@ type Payload []byte
 type ClusterRequest string
 
 type ClusterResponse struct {
-	ClusterName string
+	ClusterHash string
 	FileHash    FileHash
 	Peers       []ClusterPeer
 }
@@ -79,18 +79,17 @@ type PingRequest string
 type PingResponse = NodeStatus
 
 type ProbeRequest struct {
-	ClusterName string
+	ClusterHash string
 	FileHash    FileHash
 }
 type ProbeReponse = FileMetaData
 
-// TODO: do i need to handle any security checks here?
 type JoinRequest string
 
 type JoinResponse struct {
 	Status      PeerStatus
 	NodeID      NodeID
-	ClusterName string
+	ClusterHash string
 }
 
 // general error format - GEF

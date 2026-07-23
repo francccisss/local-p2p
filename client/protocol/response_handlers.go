@@ -16,24 +16,22 @@ func HandlePingClusterResponse(msg RPCMsgHeader, payload []byte) PingResponse {
 	fmt.Printf("Ping received from %s\n", msg.NodeID)
 	return PingResponse(payload)
 }
-func HandleLeechResponse(msg RPCMsgHeader, payload []byte, conn io.ReadWriteCloser, clt *ClusterTable) (ph PieceHeader, missingPieces []int, Error error) {
+
+// TODO: Tomorrow handle reponse
+func HandleLeechResponse(msg RPCMsgHeader, payload []byte, conn io.ReadWriteCloser, clt *ClusterTable) (ph PieceHeader, done bool, Error error) {
 
 	h, err := ParsePieceHeader(&payload)
 	if err != nil {
 		fmt.Println("Error while parsing piece header")
-		return PieceHeader{}, []int{}, err
+		return PieceHeader{}, false, err
 	}
 	cluster := (*clt)[h.FileHash]
 
-	// update bit
-	cluster.BitField.LeftShift(int(h.PieceIndex))
-
-	missingPieces, isFilled := cluster.BitField.CheckBitFields()
-	if !isFilled {
-		// keep receiving
+	cluster.BitField.SetBit(h.PieceIndex)
+	if !cluster.BitField.IsFilled() {
+		return h, false, nil
 	}
-
-	return h, missingPieces, nil
+	return h, true, nil
 }
 
 // if a node contains the peers to a cluster, then that means that the current node is also
@@ -50,9 +48,9 @@ func HandleFindClusterResponse(msg RPCMsgHeader, payload []byte, clt *ClusterTab
 	}
 
 	// appends the node that returned
-	(*clt)[cr.ClusterName].AppendClusterPeer(ClusterPeer{Addr: NodeAddr{IP: msg.IP, Port: int(binary.LittleEndian.Uint32(msg.Port))}, NodeID: msg.NodeID, Conn: nil})
+	(*clt)[cr.ClusterHash].AppendClusterPeer(ClusterPeer{Addr: NodeAddr{IP: msg.IP, Port: int(binary.LittleEndian.Uint32(msg.Port))}, NodeID: msg.NodeID, Conn: nil})
 	for _, cpeer := range cr.Peers {
-		(*clt)[cr.ClusterName].AppendClusterPeer(cpeer)
+		(*clt)[cr.ClusterHash].AppendClusterPeer(cpeer)
 	}
 	return cr, nil
 }
@@ -63,14 +61,14 @@ func HandleJoinClusterResponse(msg RPCMsgHeader, payload []byte, conn io.ReadWri
 	if err != nil {
 		return nil
 	}
-	_, ok := (*clt)[jsonRes.ClusterName]
+	_, ok := (*clt)[jsonRes.ClusterHash]
 	// dont add clusters peers if node has not requested a search to a cluster
 	// joining a cluster should only be done once the cluster is located between all
 	// other nodes
 	if !ok {
-		return fmt.Errorf("Cluster %s does not exist\n", jsonRes.ClusterName)
+		return fmt.Errorf("Cluster %s does not exist\n", jsonRes.ClusterHash)
 	}
-	fmt.Printf("[REPLY]: - JOIN '%s' Accepted request to join '%s cluster'\n", jsonRes.NodeID, jsonRes.ClusterName)
+	fmt.Printf("[REPLY]: - JOIN '%s' Accepted request to join '%s cluster'\n", jsonRes.NodeID, jsonRes.ClusterHash)
 	// cluster.AppendClusterPeer(ClusterPeer{Addr: NodeAddr{IP: msg.IP, Port: int(binary.LittleEndian.Uint32(msg.Port))}, NodeID: msg.NodeID, Conn: nil})
 
 	return nil

@@ -20,8 +20,7 @@ func TestDataPieces(t *testing.T) {
 
 	fr := protocol.FileRequest{Hash: mtd.Hash, Interest: 2}
 
-	bf.LeftShift(fr.Interest)
-	bf.PrintBitField()
+	bf.SetBit(fr.Interest)
 	if !bf.CheckBit(int(fr.Interest)) {
 		t.Fatal("[ TESTING ERROR ]: Bit set to 0")
 	}

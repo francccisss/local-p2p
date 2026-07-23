@@ -30,7 +30,7 @@ func NewBitField(piecesCount int) BitField {
 }
 
 // `pos` position to shift to
-func (bf *BitField) LeftShift(pos int) {
+func (bf *BitField) SetBit(pos int) {
 	// pos is the interest that starts at index 0
 	// checking it against BitFieldUnitCount makes sure that
 	// no access to further reads is possible if > bf.BitFieldUnitCount

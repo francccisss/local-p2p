@@ -16,8 +16,7 @@ type ClusterPeer struct {
 }
 
 type Cluster struct {
-	ClusterName  string
-	FileHash     string
+	ClusterHash  string
 	ClusterPeers []ClusterPeer
 	Node         CurrentNode // Represents the CurrentNode in this process
 	// DHT already provides all that information
@@ -42,8 +41,7 @@ func CreateCluster(fmd FileMetaData) *Cluster {
 	newCluster := Cluster{
 		ClusterPeers: []ClusterPeer{},
 		Node:         CurrentNode{Status: IDLE, ClusterName: fmd.Hash},
-		ClusterName:  fmd.Hash,
-		FileHash:     fmd.Hash,
+		ClusterHash:  fmd.Hash,
 		BitField:     bitfield.NewBitField(fmd.Pieces),
 		FileMetaData: fmd,
 	}

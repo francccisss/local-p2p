@@ -14,7 +14,7 @@ func TestBitField(t *testing.T) {
 
 	for p := range PIECE_COUNT {
 
-		bf.LeftShift(p)
+		bf.SetBit(p)
 		if !bf.CheckBit(p) {
 			t.Fatal("Bit set to 0")
 		}
