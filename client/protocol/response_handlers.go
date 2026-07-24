@@ -17,21 +17,15 @@ func HandlePingClusterResponse(msg RPCMsgHeader, payload []byte) PingResponse {
 	return PingResponse(payload)
 }
 
-// TODO: Tomorrow handle reponse
-func HandleLeechResponse(msg RPCMsgHeader, payload []byte, conn io.ReadWriteCloser, clt *ClusterTable) (ph PieceHeader, done bool, Error error) {
+func HandleLeechResponse(msg RPCMsgHeader, payload []byte, conn io.ReadWriteCloser, clt *ClusterTable) (ph PieceHeader, Error error) {
 
 	h, err := ParsePieceHeader(&payload)
 	if err != nil {
 		fmt.Println("Error while parsing piece header")
-		return PieceHeader{}, false, err
+		return PieceHeader{}, err
 	}
-	cluster := (*clt)[h.FileHash]
 
-	cluster.BitField.SetBit(h.PieceIndex)
-	if !cluster.BitField.IsFilled() {
-		return h, false, nil
-	}
-	return h, true, nil
+	return h, nil
 }
 
 // if a node contains the peers to a cluster, then that means that the current node is also

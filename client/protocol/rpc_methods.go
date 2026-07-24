@@ -207,6 +207,7 @@ func (n *Node) JoinCluster(fmd FileMetaData, clt *ClusterTable) error {
 	return nil
 }
 
+// check `isConnectionExist` before buidling message
 func (n *Node) Leech(fr FileRequest, cpeer ClusterPeer, isConnectionExist bool) error {
 
 	mds, err := json.Marshal(fr)

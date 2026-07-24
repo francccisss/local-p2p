@@ -223,13 +223,16 @@ func TestDataDelivery(t *testing.T) {
 	cpeer := cluster.NewClusterPeer(receiverNode.Addr, receiverNode.NodeID, &dhcl, protocol.SEEDING)
 	cluster.AppendClusterPeer(*cpeer)
 
+	cluster.Window = protocol.NewSlidingWindow(len(cluster.ClusterPeers), cluster.BitField.Pieces)
+
 	cluster.BitField.FillBits()
 
-	for _, c := range cluster.ClusterPeers {
+	for i := range min(len(cluster.ClusterPeers), cluster.Window.End-cluster.Window.Base) {
+		cluster.WaitBuffer = append(cluster.WaitBuffer, i)
 		requestingNode.Leech(protocol.FileRequest{
 			Hash:     metaData.Hash,
-			Interest: 0,
-		}, c, true)
+			Interest: i,
+		}, cluster.ClusterPeers[i], true)
 	}
 
 	connection.MessageHandler(&dhcl, requestingNode, clt)

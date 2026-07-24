@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 )
 
 // buffer is the payload received from a peer
@@ -44,8 +45,6 @@ func (n *Node) RecvRPCMessage(msg RPCMsgHeader, payload Payload, conn io.ReadWri
 		// setting requesting node's port to host byte ordering
 		binary.LittleEndian.PutUint32(newRPCMsgHeader.Port, uint32(n.Addr.Port))
 		switch msg.Method {
-		case HAVE:
-
 		case PING_NODE:
 			requstNodePort := binary.LittleEndian.Uint32(msg.Port)
 			requestNodeAddr := NodeAddr{IP: msg.IP, Port: int(requstNodePort)}
@@ -128,6 +127,9 @@ func (n *Node) RecvRPCMessage(msg RPCMsgHeader, payload Payload, conn io.ReadWri
 		case LEECH:
 			fmt.Printf("[TESTING]: '%s' received a LEECH REQUEST\n", n.NodeID)
 			return HandleLeechRequest(newRPCMsgHeader, msg, payload, conn, n.FILE_LOCATION, clt)
+		case HAVE:
+			// Check current bitfield for the have value from other peers
+			// if does not exist on current bit field, then leech from that peer
 		}
 
 	case REPLY: // when peers/nodes send a reaply RPCType
@@ -161,10 +163,49 @@ func (n *Node) RecvRPCMessage(msg RPCMsgHeader, payload Payload, conn io.ReadWri
 			}
 
 		case LEECH:
-			HandleLeechResponse(msg, payload, conn, clt)
-			// if err != nil {
-			// 	return err
-			// }
+
+			pieceHeader, err := HandleLeechResponse(msg, payload, conn, clt)
+			if err != nil {
+				return err
+			}
+
+			cluster := (*clt)[pieceHeader.FileHash]
+			cluster.BitField.SetBit(pieceHeader.PieceIndex)
+
+			// append current buffer to downloaded file
+			// payload[PIECE_HEADER_SIZE:]
+
+			if !cluster.BitField.IsFilled() {
+				fmt.Println("Appending last piece to downloading file")
+				fmt.Println("Received all of the pieces")
+				return nil
+			}
+
+			if pieceHeader.PieceIndex == cluster.Window.Base {
+				var i = 1 // exclude the base
+				for range cluster.Window.Size {
+					// check next bit
+					// if false it assumes that it is still waiting for ack
+					if !cluster.BitField.CheckBit(cluster.Window.Base + i) {
+						break
+					}
+					// need to sycnhronize this
+					cluster.Mux.Lock()
+					cluster.Window.Move()
+					cluster.Mux.Unlock()
+					// once it returns false on the next bit then dont continue looping
+					// since we know we cant move pass that point
+					// but for every move we now have new ends that we can request
+					randomPeer := rand.IntN(len(cluster.ClusterPeers))
+					err := n.Leech(FileRequest{Interest: cluster.Window.End, Hash: pieceHeader.FileHash}, cluster.ClusterPeers[randomPeer], true)
+					if err != nil {
+						return err
+					}
+					i++
+				}
+
+			}
+			fmt.Println("Append new piece to downloading file and leech")
 			return nil
 
 		case PROBE:

@@ -4,6 +4,8 @@ import (
 	"client/utils/bitfield"
 	"fmt"
 	"io"
+	"math"
+	"sync"
 )
 
 // calling Join() sets the TCP connection for the peers in the cluster
@@ -22,6 +24,9 @@ type Cluster struct {
 	// DHT already provides all that information
 	FileMetaData FileMetaData // no need to send File Request == to File Meta Data
 	BitField     bitfield.BitField
+	WaitBuffer   []int // creates half of total pieces
+	Window       SlidingWindow
+	Mux          *sync.Mutex
 }
 
 type CurrentNode struct {
@@ -44,6 +49,8 @@ func CreateCluster(fmd FileMetaData) *Cluster {
 		ClusterHash:  fmd.Hash,
 		BitField:     bitfield.NewBitField(fmd.Pieces),
 		FileMetaData: fmd,
+		WaitBuffer:   make([]int, 0, int(math.Ceil(float64(fmd.Pieces)/float64(2)))),
+		Mux:          new(sync.Mutex),
 	}
 
 	return &newCluster
